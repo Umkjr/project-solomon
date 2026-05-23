@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # Solomon Post-Quantum Gateway Proxy
+  # ==========================================
+  solomon-vault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solomon-vault
+    
+    # Network Constraint: Enforce host network mode to satisfy the Loopback Mandate (127.0.0.1)
+    network_mode: "host"
+    
+    # Kernel Security: Drop all privileges and kernel capabilities
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      
+    environment:
+      - PROXY_LISTEN_ADDR=127.0.0.1:8080
+      - BACKEND_URL=http://127.0.0.1:8081
+      - CONTROL_PLANE_URL=http://127.0.0.1:9000
+      - LICENSE_ID=ENT-5821
+      
+    restart: on-failure

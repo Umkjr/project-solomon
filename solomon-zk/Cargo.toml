@@ -1,0 +1,7 @@
+# solomon-zk/Cargo.toml
+[workspace]
+resolver = "2"
+members = [
+    "guest",
+    "host",
+]

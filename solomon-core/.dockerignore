@@ -1,0 +1,30 @@
+# ==========================================
+# Solomon Container Context Exclusions
+# ==========================================
+
+# Local Rust compilation artifacts
+target/
+target_isolated/
+target_release/
+target_specific/
+target_test/
+target_test_unique/
+target_test_unique_2/
+target_test_unique_3/
+target_unique_run_1/
+
+# Python test suite and mock control plane servers
+mock_control_plane.py
+mock_banking_backend.py
+test_e2e.py
+
+# Version control configurations
+.git/
+.gitignore
+
+# System telemetry and IDE-specific configurations
+.gemini/
+.idea/
+.vscode/
+*.log
+*.exe

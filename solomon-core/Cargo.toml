@@ -1,0 +1,48 @@
+[package]
+name = "ml-dsa-65"
+version = "0.1.0"
+edition = "2021"
+description = "Post-Quantum Digital Signature Algorithm ML-DSA-65 (FIPS 204) - Pure Rust Implementation"
+license = "MIT OR Apache-2.0"
+keywords = ["cryptography", "post-quantum", "dsa", "ml-dsa", "nist"]
+categories = ["cryptography", "no-std"]
+repository = "https://github.com/your-repo/ml-dsa-65"
+readme = "README.md"
+
+[dependencies]
+# Standard proxy dependencies when 'proxy' feature is enabled
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
+ed25519-dalek = { version = "2.0", optional = true }
+mac_address = { version = "1.1", optional = true }
+
+[features]
+default = ["std"]
+std = []
+# Enable this feature if you want to use SIMD optimizations
+simd = []
+# Enable this feature to build the on-premises tethered proxy server
+proxy = [
+    "std",
+    "dep:axum",
+    "dep:tokio",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:reqwest",
+    "dep:ed25519-dalek",
+    "dep:mac_address"
+]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = "s"
+panic = "abort"
