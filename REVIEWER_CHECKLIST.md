@@ -1,4 +1,4 @@
-# Reviewer Checklist — Judge This Without Trusting Me
+# Reviewer Checklist 
 
 You're being asked to sanity-check Project Solomon: a **post-quantum signature scheme
 (NIST FIPS 204 / ML-DSA-65)** plus a **zero-knowledge proof** that compresses the signatures,
@@ -25,7 +25,7 @@ cargo build --workspace --release
 
 - No errors, no warnings you'd flag in review.
 
-## 2. Tests really pass — don't take their word
+## 2. Tests passed? 
 
 ```bash
 cargo test --workspace --all-features --release
@@ -34,7 +34,7 @@ cargo test --workspace --all-features --release
 - Look at the **actual counts**: how many tests ran, how many failed.
 - `--all-features` matters — the proxy path is feature-gated.
 
-## 3. Is the ML-DSA actually correct? (THE important test)
+## 3. Is the ML-DSA actually correct? 
 
 The signature scheme is only credible if it hits **official NIST test vectors**.
 
