@@ -45,7 +45,7 @@ There's also a **shadow/monitor mode** — the proxy runs alongside live traffic
         │  Same ISO 8583 frame + PQC payload in Field 112
         ▼
  Bank's core banking system
- (TCS BaNCS, Finacle, etc. — untouched)
+ (untouched)
         │
         ▼
 ┌───────────────────────────────────────┐
