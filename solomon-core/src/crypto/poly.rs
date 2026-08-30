@@ -689,7 +689,15 @@ impl Polynomial {
         let mut r1 = Self::new();
         let mut r0 = Self::new();
         for i in 0..256 {
-            let r = self.coeffs[i];
+            let r_raw = self.coeffs[i];
+            let r = if r_raw < 0 {
+                let rem = r_raw % Q_I32;
+                if rem != 0 { rem + Q_I32 } else { 0 }
+            } else if r_raw >= Q_I32 {
+                r_raw % Q_I32
+            } else {
+                r_raw
+            };
             let r0_val = r & 8191; // r mod 8192
             let diff = 4096 - r0_val;
             let mask = diff >> 31; // -1 if r0_val > 4096, 0 otherwise

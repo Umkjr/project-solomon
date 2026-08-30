@@ -16,3 +16,18 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Solomon runtime log files
+*.log
+banking_backend_barrage.log
+banking_backend_barrage_err.log
+control_plane_barrage.log
+control_plane_barrage_err.log
+solomon_proxy_barrage.log
+solomon_proxy_barrage_err.log
+
+# Solomon heartbeat cache
+solomon_heartbeat.cache
+
+# Audit log directory
+audit_logs/

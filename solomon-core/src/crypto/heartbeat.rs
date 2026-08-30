@@ -14,13 +14,28 @@ static HAS_SALT: AtomicBool = AtomicBool::new(false);
 /// Buffer storing the validated daily salt.
 static mut DAILY_SALT: [u8; 32] = [0; 32];
 
-/// Master pre-shared key used to authenticate licensing and decrypt Epoch Tokens.
-const MASTER_LICENSE_KEY: [u8; 32] = [
-    0x53, 0x4F, 0x4C, 0x4F, 0x4D, 0x4F, 0x4E, 0x5F,
-    0x4B, 0x45, 0x59, 0x5F, 0x32, 0x30, 0x32, 0x36,
-    0x5F, 0x53, 0x45, 0x43, 0x55, 0x52, 0x45, 0x5F,
-    0x4C, 0x49, 0x43, 0x45, 0x4E, 0x53, 0x45, 0x5F,
-]; // "SOLOMON_KEY_2026_SECURE_LICENSE_"
+// Load the master license key from environment for enterprise deployments, or fallback to default
+#[cfg(feature = "std")]
+fn get_master_license_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    let default_key = b"SOLOMON_KEY_2026_SECURE_LICENSE_";
+    
+    if let Ok(env_key) = std::env::var("SOLOMON_MASTER_LICENSE_KEY") {
+        let bytes = env_key.as_bytes();
+        let len = core::cmp::min(bytes.len(), 32);
+        key[..len].copy_from_slice(&bytes[..len]);
+    } else {
+        key.copy_from_slice(default_key);
+    }
+    key
+}
+
+#[cfg(not(feature = "std"))]
+fn get_master_license_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    key.copy_from_slice(b"SOLOMON_KEY_2026_SECURE_LICENSE_");
+    key
+}
 
 /// Store the daily salt and set initialization flag.
 pub fn set_daily_salt(salt: [u8; 32]) {
@@ -77,8 +92,9 @@ pub fn verify_and_apply_epoch_token(token: &[u8]) -> Result<()> {
     rec_mac.copy_from_slice(&token[64..80]);
 
     // 1. Authenticate Token: Compute MAC = Keccak(Master Key || IV || Ciphertext)[0..16]
+    let master_key = get_master_license_key();
     let mut mac_sponge = KeccakSponge::new_shake256();
-    mac_sponge.absorb(&MASTER_LICENSE_KEY);
+    mac_sponge.absorb(&master_key);
     mac_sponge.absorb(&iv);
     mac_sponge.absorb(&ciphertext);
     let mut computed_mac = [0u8; 16];
@@ -96,7 +112,7 @@ pub fn verify_and_apply_epoch_token(token: &[u8]) -> Result<()> {
 
     // 2. Decrypt Token: keystream = Keccak(Master Key || IV)
     let mut decrypt_sponge = KeccakSponge::new_shake256();
-    decrypt_sponge.absorb(&MASTER_LICENSE_KEY);
+    decrypt_sponge.absorb(&master_key);
     decrypt_sponge.absorb(&iv);
     let mut keystream = [0u8; 32];
     decrypt_sponge.squeeze(&mut keystream);

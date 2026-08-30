@@ -1,52 +1,58 @@
 #[cfg(feature = "proxy")]
 #[tokio::main]
 async fn main() {
-    use std::net::SocketAddr;
-    use ml_dsa_65::crypto::heartbeat::set_daily_salt;
-    use ml_dsa_65::crypto::nist_api::keygen;
-    use ml_dsa_65::proxy::start_proxy_server;
+    // Check CLI arguments for CBOM export
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--export-cbom" || a == "--cbom" || a == "cbom") {
+        let cbom_json = solomon_core::cbom::generate_cbom_json();
+        println!("{}", cbom_json);
+        return;
+    }
 
-    println!("🚀 Starting Solomon Post-Quantum Proxy Launcher...");
+    // Initialize tracing subscriber for SIEM-compatible JSON logs
+    tracing_subscriber::fmt()
+        .json()
+        .with_writer(std::io::stdout)
+        .init();
 
-    // Initialize the daily salt matching mock_control_plane.py to allow valid signature verification
-    set_daily_salt(*b"LOCAL_DEV_SALT_32_BYTES_LONG_000");
+    use std::sync::Arc;
+    use rand_core::RngCore;
+    use solomon_core::config::SolomonProxyConfig;
+    use solomon_core::hsm::{KeyStorageBackend, SoftwarePinnedMemoryBackend};
+    use solomon_core::proxy::start_proxy_server;
 
-    // For local development and demonstration, generate a fresh ML-DSA-65 keypair.
-    let seed = [0x42; 32];
-    let (sk, pk) = keygen(&seed);
+    tracing::info!("Starting Solomon Post-Quantum Proxy Launcher...");
+
+    // 1. Load 12-factor configuration
+    let config = SolomonProxyConfig::from_env();
+
+    // 2. Initialize Hardware Security Module (HSM) - Pin to RAM
+    let mut rng = rand::rngs::OsRng;
+    let mut seed = [0u8; 32];
+    rng.fill_bytes(&mut seed);
     
-    // Node identity commitment
-    let node_identity = [0x99; 32];
+    let software_keystore = SoftwarePinnedMemoryBackend::generate_new(&seed);
+    let keystore: Arc<Box<dyn KeyStorageBackend>> = Arc::new(Box::new(software_keystore));
 
-    // Parse runtime environment variables
-    let listen_addr: SocketAddr = std::env::var("PROXY_LISTEN_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
-        .parse()
-        .expect("Invalid PROXY_LISTEN_ADDR");
+    // 3. Generate dynamic node identity
+    let mut node_identity = [0u8; 32];
+    rng.fill_bytes(&mut node_identity);
 
-    let backend_url = std::env::var("BACKEND_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    tracing::info!(
+        message = "Configuration parsed successfully",
+        listen_address = %config.proxy_bind_addr,
+        backend_target = %config.control_plane_url,
+        license_id = %config.license_id
+    );
 
-    let control_plane_url = std::env::var("CONTROL_PLANE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
-
-    let license_id = std::env::var("LICENSE_ID")
-        .unwrap_or_else(|_| "ENT-5821".to_string());
-
-    println!("⚙️ Configuration:");
-    println!("   - Listen Address:      {}", listen_addr);
-    println!("   - Backend Target:      {}", backend_url);
-    println!("   - Control Plane URL:   {}", control_plane_url);
-    println!("   - License ID:          {}", license_id);
-
+    // 4. Start Proxy Server
     start_proxy_server(
-        listen_addr,
-        sk,
-        pk,
+        config.proxy_bind_addr,
+        keystore,
         node_identity,
-        backend_url,
-        control_plane_url,
-        license_id,
+        config.backend_url,
+        config.control_plane_url,
+        config.license_id,
     ).await;
 }
 

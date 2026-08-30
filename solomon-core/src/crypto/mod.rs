@@ -12,3 +12,4 @@ pub mod nist_api;
 pub mod zeroize;
 pub mod str_enc;
 pub mod heartbeat;
+pub mod hybrid;

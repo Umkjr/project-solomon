@@ -6,7 +6,12 @@
 use crate::crypto::shake::KeccakSponge;
 use crate::crypto::matrix::{expand_a, expand_s};
 use crate::crypto::packing::{pack_pk, pack_sk};
-use crate::crypto::sign::{sign_internal, verify_internal};
+pub use crate::crypto::sign::{sign_internal, sign_internal_with_pk, verify_internal};
+
+pub const MLDSA_SEED_BYTES: usize = 32;
+pub const MLDSA_SK_BYTES: usize = 4032;
+pub const MLDSA_PK_BYTES: usize = 1952;
+pub const MLDSA_SIG_BYTES: usize = 3309;
 
 /// Generates a post-quantum ML-DSA-65 key pair from a 32-byte seed.
 ///
@@ -14,11 +19,15 @@ use crate::crypto::sign::{sign_internal, verify_internal};
 /// - The private key `sk` (4032 bytes)
 /// - The public key `pk` (1952 bytes)
 pub fn keygen(seed: &[u8; 32]) -> ([u8; 4032], [u8; 1952]) {
-    // 1. Expand seed using SHAKE-256 to obtain key generation seeds
+    // 1. Expand seed using SHAKE-256 to obtain key generation seeds.
+    //    FIPS 204 Algorithm 1: (rho, rho', K) = SHAKE-256(xi || k || l, 1024 bits)
+    //    For ML-DSA-65: k = 6, l = 5.
     let mut sponge = KeccakSponge::new_shake256();
     sponge.absorb(seed);
+    sponge.absorb(&[6u8, 5u8]); // k || l parameter binding per FIPS 204
     let mut expanded = crate::crypto::zeroize::Zeroized { value: [0u8; 128] };
     sponge.squeeze(&mut expanded.value);
+
 
     let mut rho = [0u8; 32];
     let mut rho_prime = crate::crypto::zeroize::Zeroized { value: [0u8; 64] };
@@ -62,16 +71,84 @@ pub fn keygen(seed: &[u8; 32]) -> ([u8; 4032], [u8; 1952]) {
     (sk, pk)
 }
 
+/// Formats the message representative M' per FIPS 204:
+/// M' = 0x00 || len(ctx) as u8 || ctx || msg
+pub fn format_m_prime_pub(msg: &[u8], ctx: &[u8]) -> Vec<u8> {
+    assert!(ctx.len() <= 255, "Context string must not exceed 255 bytes per FIPS 204");
+    let mut m_prime = Vec::with_capacity(2 + ctx.len() + msg.len());
+    m_prime.push(0x00);
+    m_prime.push(ctx.len() as u8);
+    m_prime.extend_from_slice(ctx);
+    m_prime.extend_from_slice(msg);
+    m_prime
+}
+
+fn format_m_prime(msg: &[u8], ctx: &[u8]) -> Vec<u8> {
+    format_m_prime_pub(msg, ctx)
+}
+
 /// Generates an ML-DSA-65 signature on a message using the private key.
+///
+/// Uses deterministic signing (rnd = 0x00...00) per FIPS 204 §5.2 for
+/// testability and reproducibility. For production use with a live RNG,
+/// call `sign_hedged()` instead.
 ///
 /// Returns the packed signature (3309 bytes).
 pub fn sign(sk: &[u8; 4032], msg: &[u8]) -> [u8; 3309] {
-    sign_internal(sk, msg)
+    let rnd = [0u8; 32]; // deterministic: rnd = 0
+    let m_prime = format_m_prime(msg, &[]);
+    sign_internal(sk, &m_prime, &rnd)
+}
+
+/// Generates an ML-DSA-65 signature using hedged (randomized) signing with optional context.
+///
+/// Accepts an externally supplied 32-byte `rnd` value for hedged signing
+/// per FIPS 204 §5.2. Callers should supply 32 cryptographically random bytes.
+/// Optionally binds a `ctx` context string (up to 255 bytes, empty for standard signing).
+pub fn sign_hedged(sk: &[u8; 4032], msg: &[u8], rnd: &[u8; 32], ctx: &[u8]) -> [u8; 3309] {
+    let m_prime = format_m_prime(msg, ctx);
+    sign_internal(sk, &m_prime, rnd)
 }
 
 /// Verifies an ML-DSA-65 signature on a message using the public key.
 ///
+/// Uses an empty context string (standard signing). For context-bound
+/// verification call `verify_ctx()`.
+///
 /// Returns `true` if the signature is valid, `false` otherwise.
 pub fn verify(pk: &[u8; 1952], msg: &[u8], sig: &[u8; 3309]) -> bool {
-    verify_internal(pk, msg, sig)
+    verify_ctx(pk, msg, sig, &[])
+}
+
+/// Verifies an ML-DSA-65 signature with an explicit context string.
+///
+/// The `ctx` must match exactly what was used during signing.
+pub fn verify_ctx(pk: &[u8; 1952], msg: &[u8], sig: &[u8; 3309], ctx: &[u8]) -> bool {
+    if ctx.len() > 255 {
+        return false;
+    }
+    let m_prime = format_m_prime(msg, ctx);
+    verify_internal(pk, &m_prime, sig)
+}
+
+/// Signs a message using deterministic random seed injection per FIPS 204 Section 5.3.
+///
+/// Directly feeds the supplied 32-byte `deterministic_rnd` seed into SHAKE-256 expansion
+/// for exact byte-for-byte reproducibility against official NIST ACVP vectors.
+pub fn sign_internal_deterministic(
+    sk: &[u8; MLDSA_SK_BYTES],
+    message: &[u8],
+    deterministic_rnd: &[u8; MLDSA_SEED_BYTES],
+) -> Result<[u8; MLDSA_SIG_BYTES], &'static str> {
+    let m_prime = format_m_prime(message, &[]);
+    Ok(sign_internal(sk, &m_prime, deterministic_rnd))
+}
+
+/// Signs a raw message representative M' directly with deterministic seed injection (for internal ACVP testing).
+pub fn sign_raw_m_prime_deterministic(
+    sk: &[u8; MLDSA_SK_BYTES],
+    m_prime: &[u8],
+    deterministic_rnd: &[u8; MLDSA_SEED_BYTES],
+) -> Result<[u8; MLDSA_SIG_BYTES], &'static str> {
+    Ok(sign_internal(sk, m_prime, deterministic_rnd))
 }

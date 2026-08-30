@@ -1,0 +1,8 @@
+version: '3.8'
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:latest
+    ports:
+      - "8474:8474"
+      - "8080:8080"
+    command: -host=0.0.0.0 -port=8474

@@ -1,0 +1,21 @@
+pub mod field;
+pub mod air;
+pub mod prover;
+pub mod verifier;
+pub mod trace;
+pub mod challenger;
+pub mod merkle;
+pub mod quotient;
+pub mod intt;
+pub mod ntt;
+pub mod lde;
+pub mod fri;
+pub mod simd;
+
+pub use field::{GoldilocksField, Field, GOLDILOCKS_PRIME, DILITHIUM_Q};
+pub use air::{MlDsaNttAir, MlDsaNormAir, ShakeMatrixExpansionAir, MlDsaFullAir, GAMMA_1, BETA, OMEGA, SLACK_CONSTANT};
+pub use verifier::{verify_stark_proof, StarkVerificationError};
+pub use prover::{generate_stark_proof, CompressedStarkProof};
+pub use fri::{FriProver, StarkProof};
+pub use simd::{PackedGoldilocks8, VectorizedField, vector_add_slice, vector_sub_slice, vector_mul_slice, vector_mul_scalar};
+pub use ntt::{forward_ntt_radix2, inverse_ntt_radix2, cache_oblivious_4step_ntt, cache_oblivious_4step_intt};

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Solomon: Enterprise Control Panel</title>
+    <meta name="description" content="Central fleet management, real-time cryptographic telemetry, and post-quantum AI training ground dashboard for Project Solomon.">
+    <!-- Google Fonts: Inter and Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="stars-backdrop"></div>
+    <div class="glass-bg-glow"></div>
+    
+    <div class="dashboard-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="dashboard-sidebar">
+            <div class="brand-header">
+                <div class="brand-logo">
+                    <span class="logo-icon">▲</span>
+                    <span class="logo-text">Solomon</span>
+                </div>
+                <span class="badge-stage">TRL-4 Stable</span>
+            </div>
+            
+            <nav class="nav-links">
+                <button class="nav-btn active" id="btn-fleet" onclick="switchTab('fleet')">
+                    <span class="btn-icon">⚡</span> Fleet Management
+                </button>
+                <button class="nav-btn" id="btn-telemetry" onclick="switchTab('telemetry')">
+                    <span class="btn-icon">📊</span> Telemetry Stream
+                </button>
+                <button class="nav-btn" id="btn-ai" onclick="switchTab('ai')">
+                    <span class="btn-icon">🧠</span> The Training Ground
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="dot-online"></span>
+                    <span class="status-label">Control Plane Connected</span>
+                </div>
+                <div class="system-time" id="val-sys-time">UTC: --:--:--</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Panel -->
+        <main class="main-content">
+            <!-- Header Section -->
+            <header class="main-header">
+                <div class="header-title">
+                    <span class="sub-heading">Enterprise Architecture SaaS Console</span>
+                    <h1 id="main-heading">Fleet Control Center</h1>
+                </div>
+                
+                <div class="server-meta-info">
+                    <div class="meta-item">
+                        <span class="meta-label">Master Signer IP</span>
+                        <span class="meta-val highlight-glow" id="val-master-ip">127.0.0.1:9000</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Total Shield Fleet</span>
+                        <span class="meta-val" id="val-total-fleet">3 Nodes Active</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- TAB 1: FLEET MANAGEMENT -->
+            <section class="dashboard-tab active" id="tab-fleet">
+                <div class="grid-layout cols-3">
+                    <!-- Key metrics cards -->
+                    <div class="stat-card glassmorphic glow-teal">
+                        <div class="stat-icon">🔑</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Active Licenses</span>
+                            <span class="stat-number" id="val-active-lic">3 / 4</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glassmorphic glow-blue">
+                        <div class="stat-icon">🛡️</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Attestations Passed</span>
+                            <span class="stat-number">100%</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glassmorphic glow-purple">
+                        <div class="stat-icon">🧬</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Daily Epoch Salt</span>
+                            <span class="stat-number monospace text-small" id="val-daily-salt">LOCAL_DEV_SALT_32_BYTES...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fleet Table Section -->
+                <div class="panel glassmorphic margin-top-lg">
+                    <div class="panel-header">
+                        <h2>Deployments & Edge Gateway Containers</h2>
+                        <button class="action-btn-primary" id="btn-add-node" onclick="registerNewNode()">+ Deploy Shield Node</button>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="data-table" id="fleet-table">
+                            <thead>
+                                <tr>
+                                    <th>Client / Gateway</th>
+                                    <th>License ID</th>
+                                    <th>Hardware Fingerprint</th>
+                                    <th>Status</th>
+                                    <th>Last Handbeat</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr id="row-ent-5821">
+                                    <td>
+                                        <div class="client-name-group">
+                                            <span class="client-title">Razorpay Edge Shield</span>
+                                            <span class="client-sub">High Frequency Gateway</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="monospace badge-license">ENT-5821</span></td>
+                                    <td><span class="monospace text-muted text-small" title="CPU_UUID:8F9A2B">8f9a2b...b5c7d8</span></td>
+                                    <td><span class="badge-status online" id="status-ent-5821">Online</span></td>
+                                    <td><span class="text-small" id="time-ent-5821">Just now</span></td>
+                                    <td>
+                                        <div class="action-group">
+                                            <button class="action-btn-secondary" id="btn-sync-5821" onclick="triggerSync('ENT-5821')">Sync Config</button>
+                                            <button class="action-btn-danger" id="btn-toggle-5821" onclick="toggleNode('ENT-5821')">Revoke</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr id="row-ent-9022">
+                                    <td>
+                                        <div class="client-name-group">
+                                            <span class="client-title">Cashfree India Edge</span>
+                                            <span class="client-sub">Sponsor Bank Switch</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="monospace badge-license">ENT-9022</span></td>
+                                    <td><span class="monospace text-muted text-small">5a4e3c...f1d2e3</span></td>
+                                    <td><span class="badge-status online" id="status-ent-9022">Online</span></td>
+                                    <td><span class="text-small" id="time-ent-9022">12s ago</span></td>
+                                    <td>
+                                        <div class="action-group">
+                                            <button class="action-btn-secondary" onclick="triggerSync('ENT-9022')">Sync Config</button>
+                                            <button class="action-btn-danger" id="btn-toggle-9022" onclick="toggleNode('ENT-9022')">Revoke</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr id="row-ent-1109">
+                                    <td>
+                                        <div class="client-name-group">
+                                            <span class="client-title">Paytm Secure Route</span>
+                                            <span class="client-sub">Legacy clearing buffer</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="monospace badge-license">ENT-1109</span></td>
+                                    <td><span class="monospace text-muted text-small">7d6c5b...9a8f7e</span></td>
+                                    <td><span class="badge-status offline" id="status-ent-1109">Suspended</span></td>
+                                    <td><span class="text-small" id="time-ent-1109">48h ago</span></td>
+                                    <td>
+                                        <div class="action-group">
+                                            <button class="action-btn-secondary" onclick="triggerSync('ENT-1109')">Sync Config</button>
+                                            <button class="action-btn-success" id="btn-toggle-1109" onclick="toggleNode('ENT-1109')">Activate</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: TELEMETRY STREAM -->
+            <section class="dashboard-tab" id="tab-telemetry">
+                <div class="grid-layout cols-2">
+                    <div class="panel glassmorphic">
+                        <h2>Anonymized Packet Arrival Intervals</h2>
+                        <p class="panel-sub">Tracks real-time time-series variation between transactions to feed edge load schedulers.</p>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-packet-intervals" width="500" height="240"></canvas>
+                        </div>
+                        <div class="chart-stats">
+                            <div class="chart-stat-item">
+                                <span class="stat-lbl">Mean Delay</span>
+                                <span class="stat-val text-blue" id="val-mean-delay">330.1 ms</span>
+                            </div>
+                            <div class="chart-stat-item">
+                                <span class="stat-lbl">Jitter Volatility</span>
+                                <span class="stat-val text-purple" id="val-jitter-vol">±24.5 ms</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="panel glassmorphic">
+                        <h2>Payload Byte Size Distribution</h2>
+                        <p class="panel-sub">Anonymized payload weight metadata streamed to refine cryptographic network models.</p>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-payload-bytes" width="500" height="240"></canvas>
+                        </div>
+                        <div class="chart-stats">
+                            <div class="chart-stat-item">
+                                <span class="stat-lbl">Peak Payload Width</span>
+                                <span class="stat-val text-teal">245 Bytes</span>
+                            </div>
+                            <div class="chart-stat-item">
+                                <span class="stat-lbl">ZK-SNARK compression</span>
+                                <span class="stat-val text-green">94.8% Save</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel glassmorphic margin-top-lg">
+                    <div class="panel-header">
+                        <div>
+                            <h2>Simulated Edge Memory Queue Length</h2>
+                            <p class="panel-sub">Detects processing latency saturation bounds across client clusters.</p>
+                        </div>
+                        <div class="live-pulse-group">
+                            <span class="live-pulse"></span>
+                            <span class="live-pulse-lbl">Real-Time Streams Active</span>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper large">
+                        <canvas id="chart-queue-depth" width="1000" height="200"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: THE TRAINING GROUND -->
+            <section class="dashboard-tab" id="tab-ai">
+                <div class="grid-layout cols-3">
+                    <div class="stat-card glassmorphic glow-blue">
+                        <div class="stat-icon">🔋</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Model Target</span>
+                            <span class="stat-number text-medium">DeepSeek-R1-Tabular</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glassmorphic glow-teal">
+                        <div class="stat-icon">🔄</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Refinement Epoch</span>
+                            <span class="stat-number text-medium" id="val-refine-epoch">Epoch 48 / 100</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glassmorphic glow-purple">
+                        <div class="stat-icon">📉</div>
+                        <div class="stat-details">
+                            <span class="stat-label">Validation Loss</span>
+                            <span class="stat-number text-medium" id="val-val-loss">0.0042</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-layout cols-2 margin-top-lg">
+                    <!-- AI Control panel -->
+                    <div class="panel glassmorphic">
+                        <h2>Tabular Neural Refinement Settings</h2>
+                        <p class="panel-sub">Fine-tune the security AI models natively inside Project Solomon using central metadata.</p>
+                        
+                        <div class="form-container">
+                            <div class="form-group">
+                                <label for="select-base-model">Base Architecture</label>
+                                <select id="select-base-model" class="custom-select">
+                                    <option value="deepseek-r1-7b">DeepSeek-R1-Distill-Qwen (Tabular)</option>
+                                    <option value="qwen-coder">Qwen-2.5-Coder-1.5B (Edge-Inference)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="slider-learning-rate">Learning Rate (<span id="val-lr">0.0003</span>)</label>
+                                <input type="range" id="slider-learning-rate" min="0.0001" max="0.005" step="0.0001" value="0.0003" oninput="updateLearningRate(this.value)">
+                            </div>
+                            
+                            <div class="btn-action-row">
+                                <button class="action-btn-primary" id="btn-start-training" onclick="triggerTraining()">Execute Central Refinement</button>
+                                <button class="action-btn-secondary" id="btn-stop-training" onclick="abortTraining()" disabled>Abort Process</button>
+                            </div>
+                        </div>
+
+                        <div class="training-progress-container margin-top-md hidden" id="progress-container">
+                            <div class="progress-info-row">
+                                <span class="progress-lbl" id="progress-status-lbl">Fitting neural matrix...</span>
+                                <span class="progress-pct" id="progress-pct-lbl">35%</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="progress-bar-fill" style="width: 35%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Neural training log -->
+                    <div class="panel glassmorphic flex-column">
+                        <h2>Refinement Session Logging</h2>
+                        <p class="panel-sub">Raw model compiling output logs from Ollama and DeepSeek-R1 core loops.</p>
+                        <div class="console-box" id="console-logs">
+                            <div class="console-line text-muted">[System] Control Plane AI Core online. Ready for execution.</div>
+                            <div class="console-line text-muted">[System] Telemetry datastore loaded with 1,248 completed transactions.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast-notification" class="toast hidden">
+        <span id="toast-icon">💡</span>
+        <span id="toast-message">Success: Configuration synced!</span>
+    </div>
+
+    <!-- Script Import -->
+    <script src="app.js"></script>
+</body>
+</html>

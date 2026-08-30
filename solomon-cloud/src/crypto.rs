@@ -25,14 +25,15 @@ impl MasterSigner {
             SigningKey::from_bytes(&seed)
         } else {
             println!("[Crypto] First boot: Initializing Master Ed25519 key...");
-            // Initialize from seed [0x01; 32] to align with remote proxy hardcoded root public key
-            let seed = [0x01u8; 32];
+            // Initialize with cryptographically secure random entropy
+            let mut seed = [0u8; 32];
+            rand::Rng::fill(&mut rand::thread_rng(), &mut seed);
             let signing_key = SigningKey::from_bytes(&seed);
 
             fs::write(key_path, signing_key.to_bytes())
                 .expect("Failed to write master Ed25519 key to disk");
 
-            println!("[Crypto] Master Ed25519 Key generated and locked to seed [0x01; 32]. Saved to {}", MASTER_KEY_FILE);
+            println!("[Crypto] Master Ed25519 Key dynamically generated. Saved to {}", MASTER_KEY_FILE);
             signing_key
         };
 

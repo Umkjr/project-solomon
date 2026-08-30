@@ -181,17 +181,13 @@ impl<const K: usize, const L: usize> Default for PolyMatrix<K, L> {
 /// Implements standard SHAKE-128 expansion and FIPS 204 Algorithm 34/35/36 rejection sampling.
 /// Returns the expanded PolyMatrix directly in the NTT domain.
 pub fn expand_a(rho: &[u8; 32]) -> PolyMatrix<6, 5> {
-    let salt = crate::crypto::heartbeat::get_daily_salt()
-        .expect("System fails-closed: Daily Salt not initialized via Heartbeat!");
-
     let mut a = PolyMatrix::<6, 5>::new();
     for i in 0..6 {
         for j in 0..5 {
-            let mut seed = [0u8; 66];
+            let mut seed = [0u8; 34];
             seed[0..32].copy_from_slice(rho);
             seed[32] = j as u8;
             seed[33] = i as u8;
-            seed[34..66].copy_from_slice(&salt);
 
             let mut sponge = KeccakSponge::new_shake128();
             sponge.absorb(&seed);
@@ -222,20 +218,16 @@ pub fn expand_a(rho: &[u8; 32]) -> PolyMatrix<6, 5> {
 /// Implements standard SHAKE-256 expansion and Algorithm 37/38 bounded rejection sampling with eta = 4.
 /// Returns a tuple containing the secret vectors s1 (dimension 5) and s2 (dimension 6) in the spatial domain.
 pub fn expand_s(rho_prime: &[u8; 64]) -> (PolyVector<5>, PolyVector<6>) {
-    let salt = crate::crypto::heartbeat::get_daily_salt()
-        .expect("System fails-closed: Daily Salt not initialized via Heartbeat!");
-
     let mut s1 = PolyVector::<5>::new();
     let mut s2 = PolyVector::<6>::new();
 
     // Sample secret vector s1 of dimension l = 5
     for i in 0..5 {
-        let mut seed = [0u8; 98];
+        let mut seed = [0u8; 66];
         seed[0..64].copy_from_slice(rho_prime);
         let i_u16 = i as u16;
         seed[64] = (i_u16 & 0xFF) as u8;
         seed[65] = ((i_u16 >> 8) & 0xFF) as u8;
-        seed[66..98].copy_from_slice(&salt);
 
         let mut sponge = KeccakSponge::new_shake256();
         sponge.absorb(&seed);
@@ -267,12 +259,11 @@ pub fn expand_s(rho_prime: &[u8; 64]) -> (PolyVector<5>, PolyVector<6>) {
 
     // Sample secret vector s2 of dimension k = 6
     for i in 0..6 {
-        let mut seed = [0u8; 98];
+        let mut seed = [0u8; 66];
         seed[0..64].copy_from_slice(rho_prime);
         let val = (5 + i) as u16; // l + i = 5 + i
         seed[64] = (val & 0xFF) as u8;
         seed[65] = ((val >> 8) & 0xFF) as u8;
-        seed[66..98].copy_from_slice(&salt);
 
         let mut sponge = KeccakSponge::new_shake256();
         sponge.absorb(&seed);

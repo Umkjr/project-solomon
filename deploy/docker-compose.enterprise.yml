@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Central SaaS Management & Federated AI Aggregator
+  # ----------------------------------------------------------------------------
+  solomon-cloud:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.cloud
+    container_name: solomon-cloud-control-plane
+    environment:
+      - CONTROL_PLANE_PORT=9000
+      - DATABASE_URL=sqlite:/app/data/solomon_control_plane.db
+      - RUST_LOG=info
+    volumes:
+      - solomon_cloud_data:/app/data
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    networks:
+      - solomon-enterprise-mesh
+
+  # ----------------------------------------------------------------------------
+  # 2. Ingress Edge Proxy (The Shield - Signs & Injects PQC Field 112)
+  # ----------------------------------------------------------------------------
+  solomon-ingress-proxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proxy
+    container_name: solomon-ingress-edge-proxy
+    environment:
+      - SOLOMON_PROXY_MODE=ingress
+      - SOLOMON_PROXY_BIND_ADDR=0.0.0.0:8080
+      - SOLOMON_PROXY_HTTP_PORT=8081
+      - SOLOMON_BACKEND_URL=http://solomon-receiving-proxy:8082
+      - SOLOMON_METRICS_PORT=9100
+      - SOLOMON_CONTROL_PLANE_URL=http://solomon-cloud:9000
+      - CONFIG_SYNC_INTERVAL_SEC=60
+      - SOLOMON_LICENSE_ID=ENT-5821
+      - RUST_LOG=info
+    ports:
+      - "8080:8080" # TCP Binary ISO 8583
+      - "8081:8081" # HTTP/REST Proxy API
+      - "9100:9100" # Prometheus Metrics
+    depends_on:
+      - solomon-cloud
+    restart: unless-stopped
+    networks:
+      - solomon-enterprise-mesh
+
+  # ----------------------------------------------------------------------------
+  # 3. Receiving Egress Proxy (Verifies & Strips PQC Field for Legacy Switch)
+  # ----------------------------------------------------------------------------
+  solomon-receiving-proxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.proxy
+    container_name: solomon-receiving-egress-proxy
+    environment:
+      - SOLOMON_PROXY_MODE=receiving
+      - SOLOMON_PROXY_BIND_ADDR=0.0.0.0:8082
+      - SOLOMON_CONTROL_PLANE_URL=http://solomon-cloud:9000
+      - CONFIG_SYNC_INTERVAL_SEC=60
+      - SOLOMON_LICENSE_ID=ENT-5821
+      - RUST_LOG=info
+    ports:
+      - "8082:8082" # TCP Binary Receiver
+    depends_on:
+      - solomon-cloud
+    restart: unless-stopped
+    networks:
+      - solomon-enterprise-mesh
+
+  # ----------------------------------------------------------------------------
+  # 4. Prometheus Metrics Scraper
+  # ----------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: solomon-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9095:9090"
+    restart: unless-stopped
+    networks:
+      - solomon-enterprise-mesh
+
+networks:
+  solomon-enterprise-mesh:
+    driver: bridge
+
+volumes:
+  solomon_cloud_data:
+    driver: local

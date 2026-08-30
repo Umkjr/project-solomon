@@ -1,0 +1,23 @@
+{
+  "sponsor_banks": {
+    "bank_A_tcs_bancs": {
+      "iso_version": "1987",
+      "pqc_snark_field": "Field 112 (Additional Data - National)",
+      "max_buffer_size": 256,
+      "encoding": "EBCDIC",
+      "strip_headers": [
+        "X-PQC-Metadata",
+        "Fintech-Telemetry"
+      ]
+    },
+    "bank_B_finacle": {
+      "iso_version": "1993",
+      "pqc_snark_field": "Field 123 (Reserved for Private Use)",
+      "max_buffer_size": 150,
+      "encoding": "ASCII",
+      "strip_headers": [
+        "X-Signature-Raw"
+      ]
+    }
+  }
+}

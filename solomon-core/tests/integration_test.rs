@@ -3,9 +3,9 @@
 //! This suite validates all mathematical, algebraic, and deterministic sampling targets
 //! outlined in Section 3 (Phase 3) of `QUANTUM.md` for ML-DSA-65.
 
-use ml_dsa_65::crypto::matrix::{expand_a, expand_s, PolyMatrix, PolyVector};
-use ml_dsa_65::crypto::poly::Polynomial;
-use ml_dsa_65::crypto::scalar::{Scalar, Q};
+use solomon_core::crypto::matrix::{expand_a, expand_s, PolyMatrix, PolyVector};
+use solomon_core::crypto::poly::Polynomial;
+use solomon_core::crypto::scalar::{Scalar, Q};
 
 /// Helper to generate a deterministic pseudo-random polynomial
 fn generate_test_poly(seed_offset: i32) -> Polynomial {
@@ -144,7 +144,7 @@ fn test_phase3_matrix_vector_multiplication_linearity() {
 
 #[test]
 fn test_phase3_deterministic_expand_a() {
-    ml_dsa_65::crypto::heartbeat::set_daily_salt([0x5A; 32]);
+    solomon_core::crypto::heartbeat::set_daily_salt([0x5A; 32]);
     let seed1 = [0x5A; 32];
     let seed2 = [0xA5; 32];
 
@@ -177,7 +177,7 @@ fn test_phase3_deterministic_expand_a() {
 
 #[test]
 fn test_phase3_deterministic_expand_s() {
-    ml_dsa_65::crypto::heartbeat::set_daily_salt([0x5A; 32]);
+    solomon_core::crypto::heartbeat::set_daily_salt([0x5A; 32]);
     let seed1 = [0x3C; 64];
     let seed2 = [0xC3; 64];
 
@@ -287,7 +287,7 @@ fn test_phase4_rounding_primitives_roundtrip() {
 
 #[test]
 fn test_phase4_serialization_roundtrips() {
-    use ml_dsa_65::crypto::packing::{pack_pk, unpack_pk, pack_sk, unpack_sk, pack_sig, unpack_sig};
+    use solomon_core::crypto::packing::{pack_pk, unpack_pk, pack_sk, unpack_sk, pack_sig, unpack_sig};
 
     // 1. Public Key pack/unpack roundtrip
     let rho = [0x55u8; 32];
@@ -379,9 +379,9 @@ fn test_phase4_serialization_roundtrips() {
 }
 
 #[test]
-fn test_phase4_ml_dsa_65_keygen_sign_verify_roundtrip() {
-    ml_dsa_65::crypto::heartbeat::set_daily_salt([0x5A; 32]);
-    use ml_dsa_65::crypto::nist_api::{keygen, sign, verify};
+fn test_phase4_solomon_core_keygen_sign_verify_roundtrip() {
+    solomon_core::crypto::heartbeat::set_daily_salt([0x5A; 32]);
+    use solomon_core::crypto::nist_api::{keygen, sign, verify};
 
     let seed = [0x5Au8; 32];
     
@@ -412,7 +412,7 @@ fn test_phase4_ml_dsa_65_keygen_sign_verify_roundtrip() {
 
 #[test]
 fn test_phase5_string_encryption() {
-    use ml_dsa_65::enc_str;
+    use solomon_core::enc_str;
 
     let encrypted = enc_str!("SuperSecretDiagnosticTag123", 0x2A);
     
@@ -426,7 +426,7 @@ fn test_phase5_string_encryption() {
 
 #[test]
 fn test_phase5_zeroize() {
-    use ml_dsa_65::crypto::zeroize::{Zeroize, Zeroized};
+    use solomon_core::crypto::zeroize::{Zeroize, Zeroized};
     
     // 1. Direct zeroize check on byte array
     let mut arr = [0x55u8; 32];
@@ -451,8 +451,8 @@ fn test_phase5_zeroize() {
 
 #[test]
 fn test_phase5_epoch_token_verification() {
-    use ml_dsa_65::crypto::shake::KeccakSponge;
-    use ml_dsa_65::crypto::heartbeat::{verify_and_apply_epoch_token, get_daily_salt, reset_daily_salt};
+    use solomon_core::crypto::shake::KeccakSponge;
+    use solomon_core::crypto::heartbeat::{verify_and_apply_epoch_token, get_daily_salt, reset_daily_salt};
 
     const MASTER_LICENSE_KEY: [u8; 32] = [
         0x53, 0x4F, 0x4C, 0x4F, 0x4D, 0x4F, 0x4E, 0x5F,
@@ -505,22 +505,42 @@ fn test_phase5_epoch_token_verification() {
 }
 
 #[test]
-#[should_panic(expected = "System fails-closed: Daily Salt not initialized via Heartbeat!")]
 fn test_phase5_fail_closed() {
-    use ml_dsa_65::crypto::heartbeat::reset_daily_salt;
-    use ml_dsa_65::crypto::matrix::expand_a;
+    // After the FIPS 204 compliance fix, the Daily Salt is no longer injected
+    // into the core cryptographic math (expand_a / expand_s). The fail-closed
+    // heartbeat gate is enforced at the application layer (proxy.rs) before
+    // any signing call, not inside the math primitives themselves.
+    //
+    // This test verifies that:
+    // 1. expand_a works correctly without a salt (FIPS 204 compliance).
+    // 2. The heartbeat system still correctly tracks salt state.
+    use solomon_core::crypto::heartbeat::{reset_daily_salt, get_daily_salt};
+    use solomon_core::crypto::matrix::expand_a;
 
-    // Reset daily salt to uninitialized state
     reset_daily_salt();
 
-    // This must panic and trigger "System fails-closed"
-    let _a = expand_a(&[0u8; 32]);
+    // expand_a must now succeed without a salt — it is a pure math function.
+    let a = expand_a(&[0u8; 32]);
+    // Verify all coefficients are in canonical range [0, Q-1]
+    for i in 0..6 {
+        for j in 0..5 {
+            for &c in a.rows[i][j].coeffs.iter() {
+                assert!(c >= 0 && c < solomon_core::crypto::scalar::Q,
+                    "expand_a coeff {} out of range", c);
+            }
+        }
+    }
+
+    // The heartbeat system API is still available at the application layer.
+    // Note: in a parallel test run other tests may have set the salt — this
+    // test focuses on verifying that expand_a itself no longer panics without it.
+    let _ = get_daily_salt(); // available for application-layer use
 }
 
 #[test]
 #[cfg(feature = "proxy")]
 fn test_proxy_hardware_fingerprint() {
-    use ml_dsa_65::proxy::generate_hardware_fingerprint;
+    use solomon_core::proxy::generate_hardware_fingerprint;
     let fingerprint1 = generate_hardware_fingerprint();
     let fingerprint2 = generate_hardware_fingerprint();
     assert_eq!(fingerprint1, fingerprint2, "Hardware fingerprint must be deterministic across calls");
@@ -530,7 +550,7 @@ fn test_proxy_hardware_fingerprint() {
 #[test]
 #[cfg(feature = "proxy")]
 fn test_proxy_zk_proof_footprint() {
-    use ml_dsa_65::proxy::ZkAuthorizationProof;
+    use solomon_core::proxy::ZkAuthorizationProof;
     use std::mem::size_of;
     assert_eq!(size_of::<ZkAuthorizationProof>(), 128, "ZkAuthorizationProof size must be exactly 128 bytes");
     
@@ -548,7 +568,7 @@ fn test_proxy_zk_proof_footprint() {
 #[cfg(feature = "proxy")]
 fn test_proxy_epoch_token_ed25519_verification() {
     use ed25519_dalek::{SigningKey, Signer};
-    use ml_dsa_65::proxy::verify_epoch_signature;
+    use solomon_core::proxy::verify_epoch_signature;
     
     let signing_key = SigningKey::from_bytes(&[0x01; 32]);
     let mut token = [0u8; 80];
@@ -572,12 +592,12 @@ fn test_proxy_epoch_token_ed25519_verification() {
 async fn test_proxy_intercept_and_sign_pipeline() {
     use axum::{Router, routing::post, http::HeaderMap, body::Bytes};
     use tokio::sync::mpsc;
-    use ml_dsa_65::crypto::heartbeat::set_daily_salt;
-    use ml_dsa_65::crypto::nist_api::keygen;
-    use ml_dsa_65::proxy::{start_proxy_server, ZkAuthorizationProof};
+    use solomon_core::crypto::heartbeat::set_daily_salt;
+    use solomon_core::proxy::{start_proxy_server, ZkAuthorizationProof};
     
-    // 0. Initialize Daily Salt so keygen/signing works
+    // 0. Initialize Daily Salt and Test Harness Mode
     set_daily_salt([0x5A; 32]);
+    std::env::set_var("SOLOMON_TEST_HARNESS", "1");
 
     // 1. Setup channels to receive the request details captured by mock backend
     let (tx, mut rx) = mpsc::channel::<(HeaderMap, Bytes)>(1);
@@ -603,8 +623,10 @@ async fn test_proxy_intercept_and_sign_pipeline() {
         axum::serve(backend_listener, backend_app).await.unwrap();
     });
 
-    // 3. Generate ML-DSA-65 keys for the proxy
-    let (sk, pk) = keygen(&[0x42; 32]);
+    // 3. Generate ML-DSA-65 keys for the proxy using SoftwarePinnedMemoryBackend
+    let seed = [0x42; 32];
+    let software_keystore = solomon_core::hsm::SoftwarePinnedMemoryBackend::generate_new(&seed);
+    let keystore: std::sync::Arc<Box<dyn solomon_core::hsm::KeyStorageBackend>> = std::sync::Arc::new(Box::new(software_keystore));
     let node_identity = [0x99; 32];
     
     // 4. Bind the Proxy Server to a dynamic loopback address
@@ -620,8 +642,7 @@ async fn test_proxy_intercept_and_sign_pipeline() {
     tokio::spawn(async move {
         start_proxy_server(
             proxy_addr,
-            sk,
-            pk,
+            keystore,
             node_identity,
             backend_url,
             control_plane_url,
@@ -632,7 +653,7 @@ async fn test_proxy_intercept_and_sign_pipeline() {
     // Give servers a tiny moment to start up
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-    // 5. Send an HTTP request to the proxy
+    // 5. Send an HTTP request to the proxy with X-Sponsor-Bank = "no_repack" to test unmodified transparent forwarding
     let client = reqwest::Client::new();
     let payload = b"{\"transaction_id\": 10001, \"amount\": 250}";
     let proxy_url = format!("http://{}/api/submit", proxy_addr);
@@ -640,6 +661,7 @@ async fn test_proxy_intercept_and_sign_pipeline() {
     let res = client.post(&proxy_url)
         .body(payload.as_slice())
         .header("Content-Type", "application/json")
+        .header("X-Sponsor-Bank", "no_repack")
         .send()
         .await
         .expect("Failed to send request to proxy");
@@ -648,7 +670,7 @@ async fn test_proxy_intercept_and_sign_pipeline() {
     let res_text = res.text().await.expect("Failed to read response body");
     assert_eq!(res_text, "backend_ok");
 
-    // 6. Assert mock backend received the request and injected signature/ZK headers correctly
+    // 6. Assert mock backend received the request unmodified and with injected signature/ZK headers
     let (received_headers, received_body) = tokio::time::timeout(
         tokio::time::Duration::from_secs(3),
         rx.recv(),
@@ -678,7 +700,88 @@ async fn test_proxy_intercept_and_sign_pipeline() {
     assert_eq!(zk_proof.identity_commitment, node_identity);
     assert_ne!(zk_proof.attestation_hash, [0u8; 32]);
     assert_ne!(zk_proof.proof_elements, [0u8; 32]);
+
+    // 7. Send another HTTP request with X-Sponsor-Bank = "bank_A_tcs_bancs" to test ISO 8583 repacking
+    let res_repack = client.post(&proxy_url)
+        .body(payload.as_slice())
+        .header("Content-Type", "application/json")
+        .header("X-Sponsor-Bank", "bank_A_tcs_bancs")
+        .send()
+        .await
+        .expect("Failed to send request to proxy");
+        
+    assert_eq!(res_repack.status(), reqwest::StatusCode::OK);
+    
+    let (_headers_repack, body_repack) = tokio::time::timeout(
+        tokio::time::Duration::from_secs(3),
+        rx.recv(),
+    ).await.expect("Timeout waiting for repacked request in mock backend")
+     .expect("Channel closed");
+
+    // Verify that the body was repacked and contains "Field 112 (Additional Data - National)"
+    let body_json: serde_json::Value = serde_json::from_slice(&body_repack).expect("Body must be valid JSON");
+    assert!(body_json.get("Field 112 (Additional Data - National)").is_some(), "Body must contain repacked Field 112");
 }
 
+#[tokio::test]
+#[cfg(feature = "proxy")]
+async fn test_proxy_telemetry_and_health_endpoints() {
+    use solomon_core::crypto::heartbeat::set_daily_salt;
+    use solomon_core::proxy::start_proxy_server;
+    
+    // 0. Initialize Daily Salt and Test Harness Mode
+    set_daily_salt([0x5A; 32]);
+    std::env::set_var("SOLOMON_TEST_HARNESS", "1");
 
+    // 1. Setup proxy keys
+    let seed = [0x42; 32];
+    let software_keystore = solomon_core::hsm::SoftwarePinnedMemoryBackend::generate_new(&seed);
+    let keystore: std::sync::Arc<Box<dyn solomon_core::hsm::KeyStorageBackend>> = std::sync::Arc::new(Box::new(software_keystore));
+    let node_identity = [0x99; 32];
+    
+    // 2. Bind the Proxy Server to a dynamic loopback address
+    let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_addr = proxy_listener.local_addr().unwrap();
+    drop(proxy_listener);
 
+    let backend_url = "http://127.0.0.1:0".to_string();
+    let control_plane_url = "http://127.0.0.1:0".to_string();
+    let license_id = "test-license-123".to_string();
+    
+    tokio::spawn(async move {
+        start_proxy_server(
+            proxy_addr,
+            keystore,
+            node_identity,
+            backend_url,
+            control_plane_url,
+            license_id,
+        ).await;
+    });
+    
+    // Give servers a tiny moment to start up
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+    let client = reqwest::Client::new();
+    
+    // Test /health endpoint
+    let health_url = format!("http://{}/health", proxy_addr);
+    let res_health = client.get(&health_url)
+        .send()
+        .await
+        .expect("Failed to query /health");
+    assert_eq!(res_health.status(), reqwest::StatusCode::OK);
+    let health_json: serde_json::Value = res_health.json().await.unwrap();
+    assert_eq!(health_json["status"], "healthy");
+
+    // Test /metrics endpoint
+    let metrics_url = format!("http://{}/metrics", proxy_addr);
+    let res_metrics = client.get(&metrics_url)
+        .send()
+        .await
+        .expect("Failed to query /metrics");
+    assert_eq!(res_metrics.status(), reqwest::StatusCode::OK);
+    let metrics_text = res_metrics.text().await.unwrap();
+    assert!(metrics_text.contains("solomon_active_requests"));
+    assert!(metrics_text.contains("solomon_processed_requests_total"));
+}

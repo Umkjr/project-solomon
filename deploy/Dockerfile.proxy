@@ -1,0 +1,52 @@
+# ==============================================================================
+# Project Solomon: Enterprise Edge Proxy Container (The Shield)
+# Multi-stage, distroless-hardened, non-root execution for Banking Enclaves
+# ==============================================================================
+
+FROM rust:1.82-alpine AS builder
+
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
+
+WORKDIR /usr/src/solomon
+COPY Cargo.toml Cargo.lock ./
+COPY solomon-core/ ./solomon-core/
+
+WORKDIR /usr/src/solomon/solomon-core
+RUN cargo build --release --features proxy
+
+# Strip symbols for minimal attack surface and small image footprint
+RUN strip /usr/src/solomon/target/release/ml-dsa-65 || true
+
+# ------------------------------------------------------------------------------
+# Runtime Stage: Minimal, disk-silent, non-root user
+# ------------------------------------------------------------------------------
+FROM alpine:3.20 AS runtime
+
+RUN apk add --no-cache ca-certificates tzdata
+
+# Create dedicated non-root security service account
+RUN addgroup -g 10001 -S solomon && \
+    adduser -u 10001 -S solomon -G solomon
+
+WORKDIR /app
+COPY --from=builder /usr/src/solomon/target/release/ml-dsa-65 /app/solomon-proxy
+
+# Secure read-only permissions
+RUN chown -R solomon:solomon /app && \
+    chmod -R 550 /app
+
+USER solomon:solomon
+
+ENV SOLOMON_PROXY_BIND_ADDR="0.0.0.0:8080"
+ENV SOLOMON_PROXY_HTTP_PORT="8081"
+ENV SOLOMON_RECEIVING_PROXY_PORT="8082"
+ENV SOLOMON_METRICS_PORT="9100"
+ENV SOLOMON_CONTROL_PLANE_URL="http://solomon-cloud:9000"
+ENV RUST_LOG="info"
+
+EXPOSE 8080 8081 8082 9100
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8081/healthz || exit 1
+
+ENTRYPOINT ["/app/solomon-proxy"]

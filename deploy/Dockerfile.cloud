@@ -1,0 +1,48 @@
+# ==============================================================================
+# Project Solomon: Cloud Control Plane & Fleet Orchestrator Container
+# Multi-stage, non-root execution with persistent SQLite volume mount
+# ==============================================================================
+
+FROM rust:1.82-alpine AS builder
+
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static sqlite-dev
+
+WORKDIR /usr/src/solomon
+COPY solomon-cloud/ ./solomon-cloud/
+
+WORKDIR /usr/src/solomon/solomon-cloud
+RUN cargo build --release
+
+RUN strip target/release/solomon-control-plane || true
+
+# ------------------------------------------------------------------------------
+# Runtime Stage: Control Plane SaaS Container
+# ------------------------------------------------------------------------------
+FROM alpine:3.20 AS runtime
+
+RUN apk add --no-cache ca-certificates tzdata sqlite-libs
+
+RUN addgroup -g 10002 -S solomon-cloud && \
+    adduser -u 10002 -S solomon-cloud -G solomon-cloud
+
+WORKDIR /app
+RUN mkdir -p /app/data && chown -R solomon-cloud:solomon-cloud /app/data
+
+COPY --from=builder /usr/src/solomon/solomon-cloud/target/release/solomon-control-plane /app/solomon-control-plane
+
+RUN chown -R solomon-cloud:solomon-cloud /app && \
+    chmod -R 550 /app && \
+    chmod -R 770 /app/data
+
+USER solomon-cloud:solomon-cloud
+
+ENV DATABASE_URL="sqlite:/app/data/solomon_control_plane.db"
+ENV CONTROL_PLANE_PORT="9000"
+ENV RUST_LOG="info"
+
+EXPOSE 9000
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:9000/healthz || exit 1
+
+ENTRYPOINT ["/app/solomon-control-plane"]

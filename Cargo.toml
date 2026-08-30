@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "solomon-core",
+    "solomon-zk"
+]
+resolver = "2"
