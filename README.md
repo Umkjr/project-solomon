@@ -10,7 +10,7 @@ There's also a **shadow/monitor mode** — the proxy runs alongside live traffic
 
 ## What I'm asking you to look at
 
-I'm not asking you to run anything (though you can if you want to verify). Mainly I just want to know: **does this look like real engineering, or does it look like buzzword soup?**
+I'm not asking you to run anything (though you can if you want to verify). Mainly I just want to know: **does this pass as a product that can or will be adopted by small banks and payment aggregators(just need your opinion)**
 
 Specifically:
 
