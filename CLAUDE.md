@@ -12,7 +12,7 @@
 ### Core Architectural Pillars
 1. **Math & Post-Quantum Signing Core (`solomon-core`):** A strictly `#![no_std]`, zero-dependency, constant-time implementation of the NIST FIPS 204 (ML-DSA-65) digital signature algorithm in pure Rust.
 2. **Cryptographic Batch Commitments (`solomon-core/src/zk/batch.rs`):** Generates 128-byte hash-based authenticity commitments over verified ML-DSA-65 signatures, aggregating them via a Merkle tree micro-batch accumulator to optimize throughput.
-3. **Transparent Financial Reverse Proxy (`solomon-core/src/proxy.rs`):** An asynchronous Axum-based reverse proxy that intercepts plaintext transaction streams on local loopback, signs/attests them, and dynamically repacks the 128-byte commitments into underutilized fields of legacy financial standards (e.g., ISO 8583 Field 112 / Field 123).
+3. **Transparent Financial Reverse Proxy (`solomon-core/src/proxy.rs`):** An asynchronous reverse proxy that intercepts plaintext transaction streams on local loopback, signs/attests them, and dynamically repacks the PQC payload into underutilized fields of legacy financial standards (ISO 8583 Field 112 / 123). Supports **Monitor (shadow)** mode for non-disruptive pilots — forwards traffic untouched, never rejects — flipping to enforcing **Ingress** once approved.
 4. **Licensing & Heartbeat Control Plane (`solomon-cloud`):** A centralized management hub providing rolling daily epoch tokens (`Daily_Salt`) and ingesting anonymized performance telemetry.
 5. **Quantum Cryptography Verification Suite (`tests/test_quantum_crypto.py`):** Comprehensive empirical simulation and formal verification engine for Quantum Key Distribution (QKD), Quantum Bit Error Rate (QBER), Cascade error correction, and entropy monitoring.
 
@@ -88,6 +88,13 @@ project-solomon/
 │   │   └── main.rs                  # Standalone edge daemon binary
 │   └── tests/
 │       └── integration_test.rs      # Comprehensive Rust integration test suite (13 tests)
+├── solomon-zk/                      # Self-contained STARK prover & verifier (AIR/FRI/Merkle over Goldilocks field)
+│   ├── src/
+│   │   ├── air.rs / field.rs / trace.rs   # AIR constraints, Goldilocks field, execution trace
+│   │   ├── fri.rs / merkle.rs             # FRI + Merkle commitment scheme
+│   │   ├── ntt.rs / intt.rs / simd        # NTT/iNTT + SIMD (AVX-512/NEON) primitives
+│   │   └── prover.rs / verifier.rs        # generate_stark_proof / verify_stark_proof
+│   └── tests/                        # keccak AIR wiring, SIMD differential, verifier adversarial
 ├── solomon-cloud/                   # Central SaaS Fleet Control Plane
 │   ├── dashboard/                   # High-throughput monitoring UI
 │   │   └── index.html               # Real-time canvas telemetry charts & node fleet
@@ -99,7 +106,12 @@ project-solomon/
 │   └── test_quantum_crypto.py       # Formal verification suite (QKD, QBER, Cascade, QRNG)
 ├── run_barrage_simulation.py        # High-throughput load test script
 ├── run_tech_demo.py                 # Multi-service local tech demo launcher
-└── tech_demo_chaos.py               # 3-scenario cyber-defense chaos simulation
+├── tech_demo_chaos.py               # 3-scenario cyber-defense chaos simulation
+├── pilot/
+│   ├── run_pilot.py                 # One-command pilot kit (boots topology, drives load, checks crypto, emits report)
+│   └── reports/                     # Generated HTML pilot reports (gitignored)
+├── PILOT.md                         # Easy-pilot brief for a small NBFC / fintech
+└── REVIEWER_CHECKLIST.md            # Independent technical-review checklist
 ```
 
 ---
@@ -154,6 +166,16 @@ python project-solomon/tech_demo_chaos.py
 
 # Run high-concurrency transaction barrage simulation
 python project-solomon/run_barrage_simulation.py
+```
+
+### 5.5 Easy Pilot: one command, forwardable report
+
+```bash
+# Boots the mock control plane + banking backend + proxy in monitor (shadow) mode, drives
+# ISO 8583 load, checks crypto evidence (ACVP / KAT / prove->verify), and emits a forwardable
+# HTML report to pilot/reports/. In monitor mode traffic is forwarded untouched — never rejected.
+python pilot/run_pilot.py                                   # defaults to SOLOMON_PROXY_MODE=monitor
+SOLOMON_PROXY_MODE=ingress python pilot/run_pilot.py        # same run on the enforcing path
 ```
 
 ---

@@ -145,6 +145,11 @@ pub enum ProxyMode {
     Ingress,
     /// Egress / Receiving Mode: Receives PQC-enriched transactions from network, extracts & validates ZK Proof and ML-DSA-65 signature, strips PQC field, and passes clean legacy ISO 8583 frame to core banking host (TCS BaNCS, Finacle, Base24)
     Receiving,
+    /// Shadow / Monitor Mode: For non-disruptive pilots. Every inbound message is forwarded
+    /// to the backend UNTOUCHED (no PQC injection, no rejection, heartbeat gate bypassed),
+    /// while the would-be PQC path (ML-DSA-65 sign + verify + ZK proof) is run in parallel
+    /// and its outcome + latency are logged. Flip to Ingress once the pilot is approved.
+    Monitor,
 }
 
 /// Shared proxy state.
@@ -657,8 +662,10 @@ pub async fn handle_iso8583_tcp_connection(
     backend_addr: SocketAddr,
     state: Arc<ProxyState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Check 72-Hour Grace Period Heartbeat Gate
-    if !state.heartbeat_manager.is_operational() {
+    // Check 72-Hour Grace Period Heartbeat Gate.
+    // Monitor mode is exempt: a shadow pilot must never reject traffic, so it logs
+    // the would-be enforcement outcome instead of failing closed.
+    if !state.heartbeat_manager.is_operational() && state.proxy_mode != ProxyMode::Monitor {
         tracing::error!("ISO 8583 TCP connection rejected: 72-hour offline grace period expired!");
         // Craft ISO 8583 Response Code 91 (System Error / Unavailable)
         let mut resp_msg = Iso8583Message::new(*b"0210");
@@ -866,6 +873,88 @@ pub async fn handle_iso8583_tcp_connection(
                 let mut client_outbound = Vec::with_capacity(2 + host_packet_len);
                 client_outbound.extend_from_slice(&host_len_buf);
                 client_outbound.extend_from_slice(&host_packet_buf);
+                client_stream.write_all(&client_outbound).await?;
+            }
+            ProxyMode::Monitor => {
+                // Shadow / Monitor pilot mode:
+                //  - Run the full would-be PQC path (parse, sign, VBR verify, ZK proof)
+                //    and record its outcome + latency.
+                //  - ALWAYS forward the ORIGINAL frame to the backend untouched, and never
+                //    reject or modify the transaction. Perfect for a non-disruptive pilot.
+                let started = std::time::Instant::now();
+                let shadow_result: Result<String, String> = (|| {
+                    let iso_msg = Iso8583Message::parse(&packet_buf).map_err(|e| e.to_string())?;
+                    let raw_iso_bytes = iso_msg.serialize();
+                    let pk = state
+                        .keystore
+                        .get_public_key()
+                        .map_err(|e| format!("VBR: cannot retrieve public key: {:?}", e))?;
+                    let sig = state
+                        .keystore
+                        .sign_payload(&raw_iso_bytes)
+                        .map_err(|e| format!("VBR: signing failed: {:?}", e))?;
+                    if !verify(&pk, &raw_iso_bytes, &sig) {
+                        return Err("VBR failure: signature did not verify against stored public key".into());
+                    }
+                    let sig_hash = {
+                        let mut sponge = crate::crypto::shake::KeccakSponge::new_shake256();
+                        sponge.absorb(&sig);
+                        let mut hash = [0u8; 32];
+                        sponge.squeeze(&mut hash);
+                        hash
+                    };
+                    let zk_proof = ZkAuthorizationProof::generate(
+                        &state.node_identity,
+                        &state.hardware_fingerprint,
+                        &sig_hash,
+                    );
+                    Ok(format!(
+                        "sig={}B proof={}B",
+                        sig.len(),
+                        zk_proof.identity_commitment.len() * 4
+                    ))
+                })();
+                let latency_ms = started.elapsed().as_secs_f64() * 1000.0;
+                match shadow_result {
+                    Ok(info) => tracing::info!(
+                        "MONITOR: would-be PQC attachment OK ({}) latency={:.3}ms — forwarding untouched",
+                        info,
+                        latency_ms
+                    ),
+                    Err(e) => tracing::warn!(
+                        "MONITOR: would-be PQC path error ({}) latency={:.3}ms — forwarding untouched",
+                        e,
+                        latency_ms
+                    ),
+                }
+
+                // Forward the ORIGINAL frame (2-byte length + packet) to the backend untouched.
+                let mut backend_stream = TcpStream::connect(backend_addr).await?;
+                let mut framed = Vec::with_capacity(2 + packet_buf.len());
+                framed.extend_from_slice(&len_buf);
+                framed.extend_from_slice(&packet_buf);
+                backend_stream.write_all(&framed).await?;
+
+                // Relay the backend's response back to the client untouched.
+                let mut backend_len_buf = [0u8; 2];
+                timeout(ISO_READ_TIMEOUT, backend_stream.read_exact(&mut backend_len_buf))
+                    .await
+                    .map_err(|_| "ISO 8583 backend read timeout on length header")??;
+                let backend_packet_len = u16::from_be_bytes(backend_len_buf) as usize;
+                if backend_packet_len == 0 || backend_packet_len > ISO_MAX_PACKET_BYTES {
+                    return Err(format!(
+                        "Backend ISO 8583 response packet_len {} is invalid",
+                        backend_packet_len
+                    )
+                    .into());
+                }
+                let mut backend_packet_buf = vec![0u8; backend_packet_len];
+                timeout(ISO_READ_TIMEOUT, backend_stream.read_exact(&mut backend_packet_buf))
+                    .await
+                    .map_err(|_| "ISO 8583 backend read timeout on packet body")??;
+                let mut client_outbound = Vec::with_capacity(2 + backend_packet_len);
+                client_outbound.extend_from_slice(&backend_len_buf);
+                client_outbound.extend_from_slice(&backend_packet_buf);
                 client_stream.write_all(&client_outbound).await?;
             }
         }
@@ -1413,6 +1502,7 @@ pub async fn start_proxy_server(
 
     let proxy_mode = match std::env::var("SOLOMON_PROXY_MODE").unwrap_or_default().to_lowercase().as_str() {
         "receiving" | "egress" => ProxyMode::Receiving,
+        "monitor" | "shadow" | "observe" => ProxyMode::Monitor,
         _ => ProxyMode::Ingress,
     };
 

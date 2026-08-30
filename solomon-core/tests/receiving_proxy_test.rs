@@ -4,6 +4,7 @@
 use solomon_core::iso8583::Iso8583Message;
 use solomon_core::proxy::{
     ProxyState, ProxyMode, ZkAuthorizationProof, IsoConfig, process_receiving_iso8583_message,
+    handle_iso8583_tcp_connection,
 };
 use solomon_core::heartbeat::HeartbeatManager;
 use std::sync::Arc;
@@ -163,4 +164,69 @@ fn test_receiving_proxy_tamper_detection_fail_closed() {
     // Receiving proxy MUST detect tamper and reject frame fail-closed
     let result = process_receiving_iso8583_message(&tampered_wire_bytes, &receiving_state);
     assert!(result.is_err());
+}
+
+/// Monitor (shadow) mode is the non-disruptive pilot path: the inbound ISO 8583 frame is
+/// forwarded to the backend UNTOUCHED (no PQC injection, no rejection) and a response is
+/// relayed back. This proves the "run it in shadow for a week" promise.
+#[test]
+fn test_monitor_mode_forwards_untouched_and_never_rejects() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::{TcpListener, TcpStream};
+
+        // Backend "payment switch": reads a 2-byte BE length + body, echoes it back.
+        let backend = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend.local_addr().unwrap();
+        let backend_task = tokio::spawn(async move {
+            let (mut s, _) = backend.accept().await.unwrap();
+            let mut len = [0u8; 2];
+            s.read_exact(&mut len).await.unwrap();
+            let n = u16::from_be_bytes(len) as usize;
+            let mut body = vec![0u8; n];
+            s.read_exact(&mut body).await.unwrap();
+            let out_len = u16::try_from(n).unwrap().to_be_bytes();
+            s.write_all(&out_len).await.unwrap();
+            s.write_all(&body).await.unwrap();
+            (len, body)
+        });
+
+        // Proxy-side listener handed to the handler.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = listener.local_addr().unwrap();
+        let state = Arc::new(create_test_proxy_state(ProxyMode::Monitor));
+        let handler = tokio::spawn(async move {
+            let (client, _) = listener.accept().await.unwrap();
+            handle_iso8583_tcp_connection(client, backend_addr, state).await.unwrap();
+        });
+
+        // Client sends an ISO 8583 0200 frame.
+        let mut sock = TcpStream::connect(proxy_addr).await.unwrap();
+        let mut msg = Iso8583Message::new(*b"0200");
+        msg.set_field(2, b"4111111111111111".to_vec());
+        msg.set_field(4, b"000000025000".to_vec());
+        let body = msg.serialize();
+        let body_len = u16::try_from(body.len()).unwrap().to_be_bytes();
+        let mut framed = Vec::with_capacity(2 + body.len());
+        framed.extend_from_slice(&body_len);
+        framed.extend_from_slice(&body);
+        sock.write_all(&framed).await.unwrap();
+
+        // Read the relayed response.
+        let mut rlen = [0u8; 2];
+        sock.read_exact(&mut rlen).await.unwrap();
+        let rn = u16::from_be_bytes(rlen) as usize;
+        let mut rbuf = vec![0u8; rn];
+        sock.read_exact(&mut rbuf).await.unwrap();
+
+        let (recv_len, recv_body) = backend_task.await.unwrap();
+        handler.await.unwrap();
+
+        // CRITICAL: the backend received the ORIGINAL untouched frame — no PQC field injected.
+        assert_eq!(recv_len, body_len, "backend must receive the exact original length header");
+        assert_eq!(recv_body, body, "backend must receive the exact original, unmodified frame");
+        // The client got a response, i.e. the transaction was NOT rejected in monitor mode.
+        assert_eq!(rbuf, body, "monitor mode must relay the backend response, never reject");
+    });
 }

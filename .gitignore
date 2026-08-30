@@ -31,3 +31,6 @@ solomon_heartbeat.cache
 
 # Audit log directory
 audit_logs/
+
+# Generated pilot reports
+pilot/reports/
