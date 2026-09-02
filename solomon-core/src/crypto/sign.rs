@@ -395,8 +395,10 @@ pub fn sign_internal_with_pk(
         if let Some(stored_pk) = canonical_pk {
             if !verify_internal(stored_pk, m_prime, &sig) {
                 tracing::error!(
-                    "CRITICAL: Dual VBR mismatch — signature verifies against re-derived PK but NOT against stored PK."
+                    "CRITICAL: Dual VBR mismatch — signature verifies against re-derived PK but NOT against stored PK. Aborting."
                 );
+                // Key material inconsistency: requires operator intervention, not graceful recovery.
+                panic!("Dual VBR mismatch: stored PK does not verify signature — key material corrupted.");
             }
         }
 

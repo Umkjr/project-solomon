@@ -25,12 +25,23 @@ impl AuditChain {
         records: &[AuditRecord],
         hasher: &dyn AuditHasher,
     ) -> Result<(), AuditChainError> {
+        Self::verify_chain_with_initial_hash(records, hasher, Self::GENESIS_HASH)
+    }
+
+    /// Verifies the cryptographic hash chain integrity for a slice of audit records,
+    /// allowing specification of the expected previous_hash for the first record
+    /// (essential for verifying daily rotated log segments continuing from previous days).
+    pub fn verify_chain_with_initial_hash(
+        records: &[AuditRecord],
+        hasher: &dyn AuditHasher,
+        expected_initial_hash: &str,
+    ) -> Result<(), AuditChainError> {
         if records.is_empty() {
             return Ok(());
         }
 
-        // 1. Verify genesis block
-        if records[0].previous_hash != Self::GENESIS_HASH {
+        // 1. Verify initial record previous_hash
+        if records[0].previous_hash != expected_initial_hash {
             return Err(AuditChainError::InvalidGenesisPrevious(0));
         }
 

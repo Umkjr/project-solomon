@@ -6,7 +6,7 @@ description = "Central licensing, authentication, and master cryptographic signe
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.7", features = ["json"] }
+axum = { version = "0.7", features = ["json", "macros"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "macros"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -15,4 +15,4 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 sha3 = "0.10"
-tower-http = { version = "0.5", features = ["trace"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "fs"] }

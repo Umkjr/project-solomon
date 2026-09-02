@@ -66,3 +66,33 @@ fn test_pq_stream_cipher_encryption_decryption() {
     apply_pq_stream_cipher(&mut bad_seq_decrypted, &session_key, 2);
     assert_ne!(&bad_seq_decrypted, original_payload);
 }
+
+#[test]
+fn test_aead_authenticated_framing_and_bitflip_rejection() {
+    use solomon_core::tls_tunnel::{encrypt_pq_frame, decrypt_pq_frame};
+
+    let session_key = [0x7Cu8; 32];
+    let original_payload = b"ISO8583_PAYMENT_TX_AUTH_INR_99999";
+    let seq = 42u64;
+
+    // 1. Encrypt frame with AES-256-GCM AEAD
+    let ciphertext = encrypt_pq_frame(original_payload, &session_key, seq)
+        .expect("AEAD encryption should succeed");
+    assert_ne!(&ciphertext, original_payload);
+
+    // 2. Decrypt valid frame
+    let decrypted = decrypt_pq_frame(&ciphertext, &session_key, seq)
+        .expect("AEAD decryption should succeed");
+    assert_eq!(&decrypted, original_payload);
+
+    // 3. Bit-flip attack: tamper with single byte in ciphertext
+    let mut tampered = ciphertext.clone();
+    tampered[5] ^= 0x01;
+    let result = decrypt_pq_frame(&tampered, &session_key, seq);
+    assert!(result.is_err(), "Tampered ciphertext must fail AEAD authentication");
+
+    // 4. Replay / Out-of-order sequence attack
+    let wrong_seq = seq + 1;
+    let seq_result = decrypt_pq_frame(&ciphertext, &session_key, wrong_seq);
+    assert!(seq_result.is_err(), "Mismatched sequence counter must fail AEAD authentication");
+}

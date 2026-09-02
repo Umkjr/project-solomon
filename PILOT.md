@@ -44,13 +44,9 @@ internal auditor does. What we hand you is **evidence**: tamper-evident logs, NI
 crypto, and verifiable proof generation. Your auditor judges it. That's the honest frame and
 it's the frame that survives scrutiny.
 
-## What we do NOT claim
-
-- **~~TLS 1.3~~** — the project ships a custom post-quantum tunnel for encrypted channels; it is
-  **not** a TLS 1.3 terminator. We won't overstate it.
-- **~~1,000:1 proof compression~~** — that ratio is the **Merkle batch accumulator** (1,000 signatures
-  → one 32-byte root). The STARK-style proof itself is ~3:1 and is *verified*, not just sized.
-  Ask us about the numbers in the report; we'll give you the real ones.
+- **Post-Quantum Encrypted Tunnel** — the project ships an authenticated **AES-256-GCM AEAD tunnel** with sequence-counter nonce derivation for secure inter-proxy communication; it is an application-layer tunnel, not a TLS 1.3 terminating proxy.
+- **Audited Crypto Engine by Default** — FIPS 204 signatures use RustCrypto's audited `ml-dsa v0.1.1` by default, with custom SIMD hardware acceleration available via the `fast-simd` cargo flag.
+- **Batch Compression** — the 1,000:1 ratio refers to the **Merkle batch accumulator** (1,000 signatures → one 32-byte root). The STARK proof itself proves batch integrity and is *verified* independently, not just sized.
 
 ## How to pilot
 

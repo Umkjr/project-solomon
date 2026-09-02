@@ -26,6 +26,15 @@ pub enum BatchIngressError {
     WorkerDisconnected,
 }
 
+/// Record of an aggregated STARK batch proof for auditing and verification.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchProofRecord {
+    pub batch_id: usize,
+    pub merkle_root: [u8; 32],
+    pub transaction_count: usize,
+    pub timestamp_utc: u64,
+}
+
 /// Asynchronous, lock-free batch accumulator with fault-isolated background worker.
 pub struct AsyncBatchAccumulator {
     pub tx_sender: Sender<TransactionRecord>,
@@ -33,6 +42,7 @@ pub struct AsyncBatchAccumulator {
     pub window_ms: u64,
     pub panics_total: Arc<AtomicUsize>,
     pub batches_processed: Arc<AtomicUsize>,
+    pub latest_batch: Arc<tokio::sync::RwLock<Option<BatchProofRecord>>>,
 }
 
 impl AsyncBatchAccumulator {
@@ -50,14 +60,16 @@ impl AsyncBatchAccumulator {
         let (tx_sender, rx) = channel(channel_capacity);
         let panics_total = Arc::new(AtomicUsize::new(0));
         let batches_processed = Arc::new(AtomicUsize::new(0));
+        let latest_batch = Arc::new(tokio::sync::RwLock::new(None));
 
         let panics_clone = panics_total.clone();
         let batches_clone = batches_processed.clone();
+        let latest_batch_clone = latest_batch.clone();
 
         let handle = match tokio::runtime::Handle::try_current() {
             Ok(rt) => {
                 rt.spawn(async move {
-                    run_batch_worker(rx, target_size, window_ms, panics_clone, batches_clone).await;
+                    run_batch_worker(rx, target_size, window_ms, panics_clone, batches_clone, latest_batch_clone).await;
                 })
             }
             Err(_) => {
@@ -65,7 +77,7 @@ impl AsyncBatchAccumulator {
                 std::thread::spawn(move || {
                     if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
                         let inner_handle = rt.spawn(async move {
-                            run_batch_worker(rx, target_size, window_ms, panics_clone, batches_clone).await;
+                            run_batch_worker(rx, target_size, window_ms, panics_clone, batches_clone, latest_batch_clone).await;
                         });
                         let _ = jh_sender.send(inner_handle);
                         rt.block_on(async {
@@ -88,9 +100,16 @@ impl AsyncBatchAccumulator {
             window_ms,
             panics_total,
             batches_processed,
+            latest_batch,
         };
 
         (accumulator, handle)
+    }
+
+    /// Retrieves the most recently completed batch proof record.
+    pub async fn get_latest_batch(&self) -> Option<BatchProofRecord> {
+        let lock = self.latest_batch.read().await;
+        lock.clone()
     }
 
     /// Non-blocking push for HTTP ingress handlers.
@@ -114,14 +133,18 @@ async fn run_batch_worker(
     window_ms: u64,
     panics_total: Arc<AtomicUsize>,
     batches_processed: Arc<AtomicUsize>,
+    latest_batch: Arc<tokio::sync::RwLock<Option<BatchProofRecord>>>,
 ) {
     let mut in_flight_buffer: Vec<TransactionRecord> = Vec::with_capacity(target_size);
     let window_duration = Duration::from_millis(window_ms);
 
     loop {
         if CONSECUTIVE_WORKER_PANICS.load(Ordering::SeqCst) >= 5 {
-            // Circuit breaker tripped; halt background processing.
-            break;
+            // Circuit breaker tripped: enter cooldown and reset to prevent permanent worker death
+            tracing::warn!("Circuit breaker engaged (5 consecutive panics). Cooldown active before auto-recovery...");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            CONSECUTIVE_WORKER_PANICS.store(0, Ordering::SeqCst);
+            continue;
         }
 
         let mut timeout_expired = false;
@@ -157,7 +180,17 @@ async fn run_batch_worker(
             match process_result {
                 Ok((root, _proofs)) => {
                     CONSECUTIVE_WORKER_PANICS.store(0, Ordering::SeqCst);
-                    batches_processed.fetch_add(1, Ordering::SeqCst);
+                    let count = batches_processed.fetch_add(1, Ordering::SeqCst);
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let record = BatchProofRecord {
+                        batch_id: count,
+                        merkle_root: root,
+                        transaction_count: batch_to_process.len(),
+                        timestamp_utc: ts,
+                    };
+                    let mut lock = latest_batch.write().await;
+                    *lock = Some(record);
+
                     tracing::debug!(
                         message = "Async STARK Batch Merkle root computed successfully",
                         merkle_root = ?root
@@ -215,7 +248,7 @@ impl BatchAccumulator {
     }
 
     /// Pads a batch with deterministic dummy transactions to reach the target power-of-2 size.
-    pub fn pad_batch(mut batch: Vec<TransactionRecord>) -> Vec<(TransactionRecord, bool)> {
+    pub fn pad_batch(batch: Vec<TransactionRecord>) -> Vec<(TransactionRecord, bool)> {
         let current_len = batch.len();
         let mut target_pow2 = 1;
         while target_pow2 < current_len.max(DEFAULT_BATCH_SIZE) {
@@ -223,14 +256,14 @@ impl BatchAccumulator {
         }
 
         let mut padded = Vec::with_capacity(target_pow2);
-        for tx in batch.drain(..) {
+        for tx in batch {
             padded.push((tx, false));
         }
-        
+
         while padded.len() < target_pow2 {
             padded.push((
                 TransactionRecord {
-                    payload: vec![],
+                    payload: vec![0u8; 32],
                     public_key: vec![0u8; 1952],
                     signature: vec![0u8; 3309],
                 },
@@ -245,7 +278,7 @@ impl BatchAccumulator {
         let batch_size = padded_batch.len();
         let mut leaves = Vec::with_capacity(batch_size);
         for (i, (tx, is_padding)) in padded_batch.iter().enumerate() {
-            if tx.payload == b"POISON_PILL" {
+            if cfg!(debug_assertions) && tx.payload == b"POISON_PILL" {
                 panic!("Injected deterministic mathematical panic for WAL failover testing");
             }
             

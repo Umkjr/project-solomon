@@ -15,6 +15,8 @@ pub struct SolomonProxyConfig {
     pub license_id: String,
     pub metrics_enabled: bool,
     pub metrics_port: u16,
+    pub keystore_path: std::path::PathBuf,
+    pub keystore_passphrase: String,
 }
 
 impl SolomonProxyConfig {
@@ -59,6 +61,13 @@ impl SolomonProxyConfig {
             .and_then(|p| p.parse().ok())
             .unwrap_or(9100);
 
+        let keystore_path = env::var("SOLOMON_KEYSTORE_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("keystore/solomon_keystore.bin"));
+
+        let keystore_passphrase = env::var("SOLOMON_KEYSTORE_PASSPHRASE")
+            .unwrap_or_else(|_| "SolomonEnterpriseDefaultKey2026!".to_string());
+
         Self {
             proxy_bind_addr,
             proxy_http_port,
@@ -69,6 +78,8 @@ impl SolomonProxyConfig {
             license_id,
             metrics_enabled,
             metrics_port,
+            keystore_path,
+            keystore_passphrase,
         }
     }
 }

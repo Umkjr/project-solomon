@@ -10,11 +10,12 @@
 **Project Solomon** is a lightweight post-quantum cryptographic prototype designed to secure legacy financial switches and payment networks against quantum decryption threats ("Store Now, Decrypt Later") with zero application code rewrites.
 
 ### Core Architectural Pillars
-1. **Math & Post-Quantum Signing Core (`solomon-core`):** A strictly `#![no_std]`, zero-dependency, constant-time implementation of the NIST FIPS 204 (ML-DSA-65) digital signature algorithm in pure Rust.
-2. **Cryptographic Batch Commitments (`solomon-core/src/zk/batch.rs`):** Generates 128-byte hash-based authenticity commitments over verified ML-DSA-65 signatures, aggregating them via a Merkle tree micro-batch accumulator to optimize throughput.
-3. **Transparent Financial Reverse Proxy (`solomon-core/src/proxy.rs`):** An asynchronous reverse proxy that intercepts plaintext transaction streams on local loopback, signs/attests them, and dynamically repacks the PQC payload into underutilized fields of legacy financial standards (ISO 8583 Field 112 / 123). Supports **Monitor (shadow)** mode for non-disruptive pilots — forwards traffic untouched, never rejects — flipping to enforcing **Ingress** once approved.
-4. **Licensing & Heartbeat Control Plane (`solomon-cloud`):** A centralized management hub providing rolling daily epoch tokens (`Daily_Salt`) and ingesting anonymized performance telemetry.
-5. **Quantum Cryptography Verification Suite (`tests/test_quantum_crypto.py`):** Comprehensive empirical simulation and formal verification engine for Quantum Key Distribution (QKD), Quantum Bit Error Rate (QBER), Cascade error correction, and entropy monitoring.
+1. **Math & Post-Quantum Signing Core (`solomon-core`):** Dual-Engine architecture offering audited RustCrypto `ml-dsa v0.1.1` (FIPS 204 compliant) by default for enterprise procurement, with hardware-accelerated AVX-512 / ARM NEON SIMD available via `--features fast-simd`.
+2. **Enterprise Keystore & Memory Protection (`solomon-core/src/hsm.rs`):** PCI-DSS 3.5 compliant OS memory page locking (`VirtualLock` / `mlock`), AES-256-GCM encrypted keystores with PBKDF2 key derivation, and multi-tenant isolation across acquiring banks.
+3. **Transparent Financial Reverse Proxy & EBCDIC (`solomon-core/src/proxy.rs` & `ebcdic.rs`):** An asynchronous reverse proxy that intercepts plaintext transaction streams on local loopback, signs/attests them, and dynamically repacks the PQC payload into underutilized fields of legacy financial standards (ISO 8583 Field 112 / 123) with native IBM CP037 EBCDIC conversion for TCS BaNCS. Supports **Monitor (shadow)** mode for non-disruptive pilots — forwards traffic untouched, never rejects — flipping to enforcing **Ingress** once approved.
+4. **Continuous RBI Audit Ledger (`solomon-core/src/audit/`):** Tamper-evident SHA-256 continuous hash chain with automatic reboot continuity recovery and strict Indian cloud data localization validation.
+5. **Decoupled Edge AI & Byzantine Federated Learning (`solomon-core/src/ai/` & `solomon-cloud`):** Microsecond non-blocking forward inference scoring with asynchronous background training, protected by Differential Privacy and coordinate-wise trimmed mean FedAvg aggregation.
+6. **Licensing & Centralized Control Plane (`solomon-cloud`):** A centralized management hub providing rolling daily epoch tokens, dynamic node registration, remote config sync, and live web dashboard.
 
 ---
 

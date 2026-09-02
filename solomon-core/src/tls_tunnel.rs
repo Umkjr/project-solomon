@@ -18,12 +18,17 @@ use curve25519_dalek::montgomery::MontgomeryPoint;
 use curve25519_dalek::scalar::Scalar;
 use crate::crypto::shake::KeccakSponge;
 use rand_core::RngCore;
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 
 #[derive(Debug)]
 pub enum TlsTunnelError {
     HandshakeFailed(&'static str),
     DecapsulationFailed,
     InvalidFrame,
+    AuthenticationFailed,
     IoError(std::io::Error),
     KemError,
 }
@@ -34,6 +39,7 @@ impl fmt::Display for TlsTunnelError {
             TlsTunnelError::HandshakeFailed(msg) => write!(f, "Hybrid PQ Handshake failed: {}", msg),
             TlsTunnelError::DecapsulationFailed => write!(f, "ML-KEM-768 decapsulation failed"),
             TlsTunnelError::InvalidFrame => write!(f, "Invalid encrypted packet frame"),
+            TlsTunnelError::AuthenticationFailed => write!(f, "AEAD frame authentication failed - potential bit-flipping / tampering detected"),
             TlsTunnelError::IoError(e) => write!(f, "I/O error in tunnel: {}", e),
             TlsTunnelError::KemError => write!(f, "ML-KEM cryptographic error"),
         }
@@ -230,7 +236,32 @@ mod rand_core_helper {
     impl CryptoRng for DeterministicRng {}
 }
 
+/// Encrypts a payload frame using standard authenticated AES-256-GCM AEAD (NIST SP 800-52 / PCI-DSS 4.1).
+pub fn encrypt_pq_frame(payload: &[u8], session_key: &[u8; 32], seq: u64) -> Result<Vec<u8>, TlsTunnelError> {
+    let cipher = Aes256Gcm::new_from_slice(session_key)
+        .map_err(|_| TlsTunnelError::HandshakeFailed("Invalid session key length"))?;
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes[4..12].copy_from_slice(&seq.to_be_bytes());
+    let nonce = Nonce::from(nonce_bytes);
+
+    cipher.encrypt(&nonce, payload)
+        .map_err(|_| TlsTunnelError::AuthenticationFailed)
+}
+
+/// Decrypts a payload frame and verifies the AEAD authentication tag, defeating tampering and bit-flipping.
+pub fn decrypt_pq_frame(ciphertext: &[u8], session_key: &[u8; 32], seq: u64) -> Result<Vec<u8>, TlsTunnelError> {
+    let cipher = Aes256Gcm::new_from_slice(session_key)
+        .map_err(|_| TlsTunnelError::HandshakeFailed("Invalid session key length"))?;
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes[4..12].copy_from_slice(&seq.to_be_bytes());
+    let nonce = Nonce::from(nonce_bytes);
+
+    cipher.decrypt(&nonce, ciphertext)
+        .map_err(|_| TlsTunnelError::AuthenticationFailed)
+}
+
 /// Encrypts or Decrypts a stream packet with 256-bit Post-Quantum Keystream Mask & Sequence Counter
+#[deprecated(note = "Unauthenticated stream cipher; use encrypt_pq_frame / decrypt_pq_frame with AES-256-GCM AEAD instead")]
 pub fn apply_pq_stream_cipher(payload: &mut [u8], session_key: &[u8; 32], seq: u64) {
     let mut sponge = KeccakSponge::new_shake256();
     sponge.absorb(session_key);

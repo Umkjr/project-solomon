@@ -18,7 +18,7 @@ async fn main() {
     use std::sync::Arc;
     use rand_core::RngCore;
     use solomon_core::config::SolomonProxyConfig;
-    use solomon_core::hsm::{KeyStorageBackend, SoftwarePinnedMemoryBackend};
+    use solomon_core::hsm::{KeyStorageBackend, EncryptedFileKeystoreBackend};
     use solomon_core::proxy::start_proxy_server;
 
     tracing::info!("Starting Solomon Post-Quantum Proxy Launcher...");
@@ -26,15 +26,17 @@ async fn main() {
     // 1. Load 12-factor configuration
     let config = SolomonProxyConfig::from_env();
 
-    // 2. Initialize Hardware Security Module (HSM) - Pin to RAM
-    let mut rng = rand::rngs::OsRng;
-    let mut seed = [0u8; 32];
-    rng.fill_bytes(&mut seed);
-    
-    let software_keystore = SoftwarePinnedMemoryBackend::generate_new(&seed);
-    let keystore: Arc<Box<dyn KeyStorageBackend>> = Arc::new(Box::new(software_keystore));
+    // 2. Initialize Hardware Security Module (HSM) - Persistent AES-256-GCM Keystore with RAM Locking
+    let keystore_backend = EncryptedFileKeystoreBackend::load_or_generate(
+        &config.keystore_path,
+        &config.keystore_passphrase,
+        None,
+    ).expect("Failed to initialize persistent encrypted keystore");
+
+    let keystore: Arc<Box<dyn KeyStorageBackend>> = Arc::new(Box::new(keystore_backend));
 
     // 3. Generate dynamic node identity
+    let mut rng = rand::rngs::OsRng;
     let mut node_identity = [0u8; 32];
     rng.fill_bytes(&mut node_identity);
 

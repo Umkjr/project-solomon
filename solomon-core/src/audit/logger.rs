@@ -40,7 +40,8 @@ impl AuditLogger {
         node_identity: [u8; 32],
     ) -> Self {
         let (sender, receiver) = mpsc::channel(channel_capacity);
-        let last_hash = Arc::new(Mutex::new(AuditChain::GENESIS_HASH.to_string()));
+        let initial_hash = Self::recover_last_hash(&log_dir);
+        let last_hash = Arc::new(Mutex::new(initial_hash));
         let worker_last_hash = Arc::clone(&last_hash);
         let node_identity_hex = hex::encode(node_identity);
         let worker_signer = Arc::clone(&signer);
@@ -134,6 +135,38 @@ impl AuditLogger {
         let m = if mp < 10 { mp + 3 } else { mp - 9 };
         let y = if m <= 2 { y + 1 } else { y };
         (y, m, d)
+    }
+
+    /// Recovers the last recorded hash from existing audit log segments on disk,
+    /// ensuring unbroken chain continuity across proxy reboots.
+    pub fn recover_last_hash(log_dir: &std::path::Path) -> String {
+        if let Ok(entries) = std::fs::read_dir(log_dir) {
+            let mut segments: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.starts_with("solomon_audit_") && name.ends_with(".ndjson")
+                })
+                .collect();
+            segments.sort_by_key(|e| e.file_name());
+            if let Some(latest) = segments.last() {
+                if let Ok(content) = std::fs::read_to_string(latest.path()) {
+                    for line in content.lines().rev() {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        if let Ok(record) = serde_json::from_str::<AuditRecord>(trimmed) {
+                            return record.current_hash;
+                        }
+                        if let Ok(seal) = serde_json::from_str::<AuditSegmentSeal>(trimmed) {
+                            return seal.last_record_hash;
+                        }
+                    }
+                }
+            }
+        }
+        AuditChain::GENESIS_HASH.to_string()
     }
 
     fn write_segment_metadata(log_dir: &PathBuf, segment_date: &str, timestamp_secs: u64) {
@@ -262,7 +295,11 @@ impl AuditLogger {
                                 .filter_map(|e| e.ok())
                                 .filter(|e| e.file_name().to_string_lossy().starts_with("solomon_audit_") && e.file_name().to_string_lossy().ends_with(".ndjson"))
                                 .collect();
-                            segments.sort_by_key(|e| e.file_name());
+                            segments.sort_by_key(|e| {
+                                e.metadata().ok()
+                                 .and_then(|m| m.modified().ok())
+                                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                            });
                             while segments.len() > 3650 {
                                 let oldest = segments.remove(0);
                                 let p = oldest.path();
@@ -272,6 +309,9 @@ impl AuditLogger {
                                     let _ = std::fs::set_permissions(&p, perms);
                                 }
                                 let _ = std::fs::remove_file(&p);
+                                // Remove companion metadata file to avoid orphaned .meta.json accumulation.
+                                let meta_path = p.with_extension("").with_extension("meta.json");
+                                let _ = std::fs::remove_file(&meta_path);
                             }
                         }
 

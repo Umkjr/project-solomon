@@ -139,8 +139,8 @@ fn test_keccak_seed_tamper_alters_stark_proof() {
     assert_ne!(proof1, proof2, "Proofs with different public key seeds must differ");
 
     let res1 = verify_stark_proof(&proof1, &pk1, &msg);
-    assert!(res1.is_ok() && res1.unwrap(), "Proof 1 must verify with pk1");
+    assert_eq!(res1, Ok(true), "Proof 1 must verify with pk1");
 
     let res2 = verify_stark_proof(&proof2, &pk2, &msg);
-    assert!(res2.is_ok() && res2.unwrap(), "Proof 2 must verify with pk2");
+    assert_eq!(res2, Ok(true), "Proof 2 must verify with pk2");
 }

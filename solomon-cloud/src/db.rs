@@ -19,14 +19,19 @@ pub async fn init_db(pool: &SqlitePool) {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS clients (
             license_id TEXT PRIMARY KEY,
+            name TEXT,
             hardware_fingerprint TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
          );"
     )
     .execute(pool)
     .await
     .expect("Failed to execute clients schema migration");
+
+    let _ = sqlx::query("ALTER TABLE clients ADD COLUMN name TEXT;").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE clients ADD COLUMN last_seen TIMESTAMP;").execute(pool).await;
 
     // 2. Create PKI ledger table
     sqlx::query(
@@ -86,14 +91,17 @@ pub async fn init_db(pool: &SqlitePool) {
     .await
     .expect("Failed to execute global_ai_models schema migration");
 
-    // 5. Pre-seed default ENT-5821 license and sponsor bank switch configurations
+    // 5. Pre-seed default fleet nodes matching dashboard
     sqlx::query(
-        "INSERT OR IGNORE INTO clients (license_id, hardware_fingerprint, is_active)
-         VALUES ('ENT-5821', NULL, 1);"
+        "INSERT OR IGNORE INTO clients (license_id, name, hardware_fingerprint, is_active)
+         VALUES 
+         ('ENT-5821', 'Razorpay Edge Shield', '8f9a2b7c4d5e8f9a2bb5c7d8e9', 1),
+         ('ENT-9022', 'Cashfree India Edge', '5a4e3c2b1a0f9e8d7cf1d2e3d4', 1),
+         ('ENT-1109', 'Paytm Secure Route', '7d6c5b4a3f2e1d0c9b9a8f7e6d', 0);"
     )
     .execute(pool)
     .await
-    .expect("Failed to seed default active license in SQLite db");
+    .expect("Failed to seed default active licenses in SQLite db");
 
     sqlx::query(
         "INSERT OR IGNORE INTO switch_configs (sponsor_bank, iso_version, pqc_field_number, encoding, max_buffer_size, strip_headers)

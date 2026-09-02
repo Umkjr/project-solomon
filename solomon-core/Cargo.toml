@@ -37,10 +37,14 @@ curve25519-dalek = { version = "4.1", default-features = false, optional = true 
 tokio-rustls = { version = "0.26", optional = true }
 rustls-pemfile = { version = "2", optional = true }
 sha3 = { version = "0.10.8", default-features = false }
+ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc", "rand_core", "zeroize"] }
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc"] }
 
 [features]
-default = ["std"]
+default = ["std", "audited-crypto"]
 std = []
+audited-crypto = []
+fast-simd = ["simd"]
 # Enable this feature if you want to use SIMD optimizations
 simd = []
 # Enable this feature to build the on-premises tethered proxy server

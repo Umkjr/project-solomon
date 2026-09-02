@@ -49,6 +49,7 @@ fn create_test_proxy_state(mode: ProxyMode) -> ProxyState {
         iso_config: Arc::new(std::sync::RwLock::new(IsoConfig { sponsor_banks })),
         heartbeat_manager: heartbeat_mgr,
         ai_model: Arc::new(std::sync::Mutex::new(solomon_core::ai::model::EdgeAutoencoder::new(&mut rand::rngs::OsRng))),
+        ai_training_sender: tokio::sync::mpsc::channel(10).0,
         batch_accumulator: Arc::new(solomon_core::zk::batch::BatchAccumulator::new()),
         zk_mode: "production".to_string(),
         hybrid_mode: false,

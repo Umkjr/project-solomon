@@ -6,6 +6,7 @@
 use crate::field::{Field, GoldilocksField};
 use crate::challenger::Challenger;
 use crate::merkle::{build_merkle_tree_from_leaves, generate_merkle_proof};
+use crate::intt::get_root_of_unity;
 use sha3::{Digest, Keccak256};
 
 use serde::{Serialize, Deserialize};
@@ -70,24 +71,35 @@ impl FriProver {
         challenger.observe_slice(&initial_root);
 
         // 2. Recursive Folding Loop
+        let inv2 = GoldilocksField::from_u64(2).invert();
+        let mut current_len = current_evals.len();
         while current_evals.len() > 1 {
             let beta = challenger.sample_ext();
             let next_len = current_evals.len() / 2;
             let mut next_evals = Vec::with_capacity(next_len);
 
+            // Domain generator for the current layer: primitive current_len-th root of unity
+            let omega = get_root_of_unity(current_len);
+
             for i in 0..next_len {
                 let f_x = current_evals[i];
                 let f_neg_x = current_evals[i + next_len];
 
+                // x = omega^i (domain point for index i)
+                let x = omega.exp(i as u64);
+
+                // folded(x^2) = (f(x) + f(-x))/2 + beta * (f(x) - f(-x)) / (2*x)
                 let sum = f_x.add(f_neg_x);
                 let diff = f_x.sub(f_neg_x);
-                let beta_diff = diff.mul(beta);
-                let folded = sum.add(beta_diff);
+                let half_sum = sum.mul(inv2);
+                let half_diff_over_x = diff.mul(inv2).mul(x.invert());
+                let folded = half_sum.add(beta.mul(half_diff_over_x));
 
                 next_evals.push(folded);
             }
 
             current_evals = next_evals;
+            current_len /= 2;
 
             // Merkleize intermediate layer
             let (root, layers) = Self::merkleize_evals(&current_evals);

@@ -161,9 +161,11 @@ impl EdgeAutoencoder {
         }
 
         // Clip and apply B1
+        let norm_b1: f32 = self.grad_b1.data.iter().map(|x| x*x).sum::<f32>().sqrt();
+        let scale_b1 = if norm_b1 > clip_norm { clip_norm / norm_b1 } else { 1.0 };
         for i in 0..self.b1.data.len() {
             let noise = sample_gaussian(noise_std, rng);
-            self.b1.data[i] -= learning_rate * (self.grad_b1.data[i] + noise);
+            self.b1.data[i] -= learning_rate * (self.grad_b1.data[i] * scale_b1 + noise);
             self.grad_b1.data[i] = 0.0;
         }
 
@@ -177,9 +179,11 @@ impl EdgeAutoencoder {
         }
 
         // Clip and apply B2
+        let norm_b2: f32 = self.grad_b2.data.iter().map(|x| x*x).sum::<f32>().sqrt();
+        let scale_b2 = if norm_b2 > clip_norm { clip_norm / norm_b2 } else { 1.0 };
         for i in 0..self.b2.data.len() {
             let noise = sample_gaussian(noise_std, rng);
-            self.b2.data[i] -= learning_rate * (self.grad_b2.data[i] + noise);
+            self.b2.data[i] -= learning_rate * (self.grad_b2.data[i] * scale_b2 + noise);
             self.grad_b2.data[i] = 0.0;
         }
 

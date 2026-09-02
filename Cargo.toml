@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "solomon-core",
-    "solomon-zk"
+    "solomon-zk",
+    "solomon-cloud"
 ]
 resolver = "2"

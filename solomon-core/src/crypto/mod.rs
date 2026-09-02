@@ -13,3 +13,4 @@ pub mod zeroize;
 pub mod str_enc;
 pub mod heartbeat;
 pub mod hybrid;
+pub mod audited_mldsa;

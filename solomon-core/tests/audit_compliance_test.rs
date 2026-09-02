@@ -101,3 +101,89 @@ async fn test_algorithm_agnosticism_shake256_audit_chain() {
     assert!(verification.is_ok(), "SHAKE-256 audit chain verification failed: {:?}", verification.err());
 }
 
+#[tokio::test]
+async fn test_audit_chain_continuity_across_reboots() {
+    let dir = tempdir().unwrap();
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[0x77; 32]);
+    let node_identity = [0xBB; 32];
+    let signer = Arc::new(Ed25519AuditSigner::new(signing_key));
+    let hasher = Arc::new(Sha256AuditHasher);
+
+    let mut combined_records = Vec::new();
+
+    // Session 1: Node boots, processes 10 transactions, shuts down
+    {
+        let logger1 = AuditLogger::new(
+            dir.path().to_path_buf(),
+            100,
+            signer.clone(),
+            hasher.clone(),
+            node_identity,
+        );
+
+        for i in 0..10 {
+            let meta = CryptoAuditMeta {
+                algorithm_suite: "ML-DSA-65".to_string(),
+                hybrid_verified: true,
+                starks_proven: false,
+                proof_latency_ms: 0.45,
+            };
+            let rec = logger1.emit(
+                format!("session1-tx-{}", i),
+                "in-mum-01.switch.internal".to_string(),
+                meta,
+                "IN-MUM-01".to_string(),
+                SystemAction::SuccessForwarded,
+            ).await.unwrap();
+            combined_records.push(rec);
+        }
+        logger1.flush().await.unwrap();
+    } // logger1 dropped
+
+    // Session 2: Node reboots in the exact same directory, recovers last hash from disk
+    {
+        let logger2 = AuditLogger::new(
+            dir.path().to_path_buf(),
+            100,
+            signer.clone(),
+            hasher.clone(),
+            node_identity,
+        );
+
+        for i in 10..20 {
+            let meta = CryptoAuditMeta {
+                algorithm_suite: "ML-DSA-65".to_string(),
+                hybrid_verified: true,
+                starks_proven: false,
+                proof_latency_ms: 0.45,
+            };
+            let rec = logger2.emit(
+                format!("session2-tx-{}", i),
+                "in-mum-01.switch.internal".to_string(),
+                meta,
+                "IN-MUM-01".to_string(),
+                SystemAction::SuccessForwarded,
+            ).await.unwrap();
+            combined_records.push(rec);
+        }
+        logger2.flush().await.unwrap();
+    }
+
+    assert_eq!(combined_records.len(), 20);
+
+    // Verify unbroken chain from record 0 to 19 across the reboot boundary
+    let chain_check = AuditChain::verify_chain(&combined_records, hasher.as_ref());
+    assert!(
+        chain_check.is_ok(),
+        "Audit chain must remain unbroken across node reboots: {:?}",
+        chain_check.err()
+    );
+
+    // Check specific linkage across the boundary: record 10's previous_hash must equal record 9's current_hash
+    assert_eq!(
+        combined_records[10].previous_hash,
+        combined_records[9].current_hash,
+        "Record #10 previous_hash must perfectly link to Record #9 current_hash"
+    );
+}
+

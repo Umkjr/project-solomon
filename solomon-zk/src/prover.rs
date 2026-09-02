@@ -12,18 +12,19 @@ pub type CompressedStarkProof = Vec<u8>;
 pub fn generate_stark_proof(
     signature: &[u8],
     public_key: &[u8],
-    _message: &[u8],
+    message: &[u8],
 ) -> CompressedStarkProof {
     // 1. Unpack signature into Goldilocks Trace Matrix
     let mut trace_builder = TraceBuilder::new();
     trace_builder.ingest_signature(signature);
-    
+
     // 2. Initialize Fiat-Shamir Challenger
     let mut challenger = Challenger::new();
-    
+
     // 3. Commit to the trace matrix
     let (trace_merkle_root, trace_layers) = build_merkle_tree_from_matrix(&trace_builder.matrix);
     challenger.observe_slice(public_key);
+    challenger.observe_slice(message);
     challenger.observe_slice(&trace_merkle_root);
     
     // 4. Draw random mixing scalars (4 Alphas for NTT, Norm, and Keccak constraints)

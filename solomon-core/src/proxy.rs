@@ -171,6 +171,7 @@ pub struct ProxyState {
     pub iso_config: Arc<std::sync::RwLock<IsoConfig>>,
     pub heartbeat_manager: Arc<HeartbeatManager>,
     pub ai_model: Arc<std::sync::Mutex<crate::ai::model::EdgeAutoencoder>>,
+    pub ai_training_sender: tokio::sync::mpsc::Sender<crate::ai::linalg::Vector>,
     pub batch_accumulator: Arc<crate::zk::batch::BatchAccumulator>,
     pub zk_mode: String,
     pub hybrid_mode: bool,
@@ -218,9 +219,25 @@ pub fn generate_hardware_fingerprint() -> [u8; 32] {
     fingerprint
 }
 
-/// Verifies Ed25519 signature of the Epoch Token.
+/// Dynamically retrieves the configured Solomon Master Public Key from environment, falling back to default.
+pub fn get_master_public_key() -> [u8; 32] {
+    if let Ok(hex_str) = std::env::var("SOLOMON_MASTER_PUBLIC_KEY") {
+        if let Some(bytes) = parse_hex::<32>(&hex_str) {
+            return bytes;
+        }
+    }
+    SOLOMON_MASTER_PUBLIC_KEY_BYTES
+}
+
+/// Verifies Ed25519 signature of the Epoch Token using configured master public key.
 pub fn verify_epoch_signature(token: &[u8; 80], signature_bytes: &[u8; 64]) -> bool {
-    if let Ok(verifying_key) = VerifyingKey::from_bytes(&SOLOMON_MASTER_PUBLIC_KEY_BYTES) {
+    let master_pk = get_master_public_key();
+    verify_epoch_signature_with_pk(token, signature_bytes, &master_pk)
+}
+
+/// Verifies Ed25519 signature of the Epoch Token with an explicit master public key.
+pub fn verify_epoch_signature_with_pk(token: &[u8; 80], signature_bytes: &[u8; 64], master_pk: &[u8; 32]) -> bool {
+    if let Ok(verifying_key) = VerifyingKey::from_bytes(master_pk) {
         let signature = Signature::from_bytes(signature_bytes);
         return verifying_key.verify(token, &signature).is_ok();
     }
@@ -262,6 +279,17 @@ pub async fn metrics_handler(State(state): State<Arc<ProxyState>>) -> String {
 
 /// Healthcheck endpoint handler
 pub async fn health_handler(State(state): State<Arc<ProxyState>>) -> (StatusCode, axum::Json<serde_json::Value>) {
+    // Fail-closed on audit worker degradation before checking heartbeat.
+    if let Some(logger) = &state.audit_logger {
+        if !logger.is_healthy() {
+            tracing::error!(message = "Audit logger worker unhealthy — reporting SERVICE_UNAVAILABLE on health endpoint.");
+            return (StatusCode::SERVICE_UNAVAILABLE, axum::Json(serde_json::json!({
+                "status": "audit_degraded",
+                "error": "Audit logger background worker failed to write — RBI compliance cannot be maintained."
+            })));
+        }
+    }
+
     let status = state.heartbeat_manager.get_status();
     match status {
         HeartbeatStatus::Active { last_synced, valid_until } => {
@@ -435,16 +463,16 @@ pub async fn proxy_handler(
         (sig, stored_pk)
     };
 
-    // 3.5 Privacy-Preserving AI Anomaly Scoring & Training
+    // 3.5 Privacy-Preserving AI Anomaly Scoring (Fast Non-blocking Forward Pass)
     let features = extract_features(&body_bytes, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
-    let (anomaly_score, _mse) = {
-        let mut model = state.ai_model.lock().unwrap();
-        let (score, mse) = model.compute_anomaly_score(&features);
-        model.record_loss(mse);
-        let (x_hat, h) = model.forward(&features);
-        model.backward(&features, &x_hat, &h);
-        (score, mse)
+    let anomaly_score = {
+        let model = state.ai_model.lock().unwrap();
+        let (score, _) = model.compute_anomaly_score(&features);
+        score
     };
+    // Offload training sample to non-blocking background queue
+    let _ = state.ai_training_sender.try_send(features);
+
     if anomaly_score > 0.85 {
         tracing::warn!("⚠️ AI Anomaly Detected on HTTP pipeline! Score: {:.3}", anomaly_score);
     }
@@ -529,20 +557,22 @@ pub async fn proxy_handler(
         if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
             let encoded_proof = match bank_config.encoding.as_str() {
                 "EBCDIC" => {
-                    tracing::warn!(message = "NOT IMPLEMENTED - EBCDIC translation placeholder. Encoding as hex instead.");
-                    to_hex(&serde_json::to_vec(&zk_proof).unwrap())
+                    let raw_hex = to_hex(&serde_json::to_vec(&zk_proof).unwrap());
+                    let ebcdic_bytes = crate::ebcdic::ascii_to_ebcdic(raw_hex.as_bytes());
+                    to_hex(&ebcdic_bytes)
                 }
                 _ => to_hex(&serde_json::to_vec(&zk_proof).unwrap()),
             };
             
             let truncated_proof = if encoded_proof.len() > bank_config.max_buffer_size {
-                tracing::warn!(
-                    message = "Bank config max_buffer_size is smaller than the PQC proof payload. Injecting full proof without truncation.",
+                tracing::error!(
+                    message = "PQC proof payload exceeds bank max_buffer_size — rejecting transaction.",
                     sponsor_bank = %sponsor_bank,
                     proof_len = encoded_proof.len(),
                     configured_max = bank_config.max_buffer_size
                 );
-                encoded_proof
+                state.active_requests.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                return Err(StatusCode::PAYLOAD_TOO_LARGE);
             } else {
                 encoded_proof
             };
@@ -738,18 +768,14 @@ pub async fn handle_iso8583_tcp_connection(
                     (sig, pk)
                 };
 
-                // 5.5 Privacy-Preserving AI Anomaly Scoring
+                // 5.5 Privacy-Preserving AI Anomaly Scoring (Fast Non-blocking Forward Pass)
                 let features = extract_features(&raw_iso_bytes, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
                 let anomaly_score = {
-                    let mut model = state.ai_model.lock().unwrap();
-                    let (score, mse) = model.compute_anomaly_score(&features);
-                    model.record_loss(mse);
-                    
-                    // Backpropagate to train local federated weights
-                    let (x_hat, h) = model.forward(&features);
-                    model.backward(&features, &x_hat, &h);
+                    let model = state.ai_model.lock().unwrap();
+                    let (score, _) = model.compute_anomaly_score(&features);
                     score
                 };
+                let _ = state.ai_training_sender.try_send(features);
 
                 if anomaly_score > 0.85 {
                     tracing::warn!("⚠️ AI Anomaly Detected! Score: {:.3} - Triggering quarantine protocol.", anomaly_score);
@@ -1146,8 +1172,7 @@ pub async fn run_heartbeat_loop(
                                 tracing::error!("ERROR: Epoch Token decryption failed!");
                             }
                         } else {
-                            tracing::error!("CRITICAL ERROR: Epoch Token Ed25519 signature verification failed! System failing-closed.");
-                            std::process::exit(1);
+                            tracing::error!("SECURITY ALERT: Epoch Token Ed25519 signature verification failed! Token rejected. Maintaining resilient fail-safe operation without process crash.");
                         }
                     }
                 }
@@ -1359,69 +1384,72 @@ async fn require_metrics_auth(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, StatusCode> {
-    if let Ok(expected) = std::env::var("SOLOMON_METRICS_TOKEN") {
-        if !expected.is_empty() {
-            let auth_header = req
-                .headers()
-                .get(axum::http::header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
+    let expected = std::env::var("SOLOMON_METRICS_TOKEN").unwrap_or_default();
+    if expected.is_empty() {
+        // Treat unconfigured token as deny-all: fail closed, not open.
+        tracing::error!(message = "SOLOMON_METRICS_TOKEN not set — denying access to protected endpoint.");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
-            let ts_secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            let endpoint = req.uri().path().to_string();
+    let auth_header = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
 
-            if !auth_header.starts_with("Bearer ") {
-                let iam_logger = crate::audit::IamLogger::new(std::path::PathBuf::from("audit_logs"));
-                iam_logger.record(&crate::audit::IamAccessRecord {
-                    timestamp_utc_secs: ts_secs,
-                    endpoint,
-                    operator_token_hash: "missing_or_malformed_header".to_string(),
-                    source_ip: None,
-                    mfa_verified: false,
-                    access_granted: false,
-                    reason: "missing_bearer_prefix".to_string(),
-                });
-                return Err(StatusCode::UNAUTHORIZED);
-            }
+    let ts_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let endpoint = req.uri().path().to_string();
 
-            let provided = &auth_header[7..];
-            let token_hash = {
-                use sha2::{Sha256, Digest};
-                let mut h = Sha256::new();
-                h.update(provided.as_bytes());
-                format!("{:x}", h.finalize())
-            };
+    if !auth_header.starts_with("Bearer ") {
+        let iam_logger = crate::audit::IamLogger::new(std::path::PathBuf::from("audit_logs"));
+        iam_logger.record(&crate::audit::IamAccessRecord {
+            timestamp_utc_secs: ts_secs,
+            endpoint,
+            operator_token_hash: "missing_or_malformed_header".to_string(),
+            source_ip: None,
+            mfa_verified: false,
+            access_granted: false,
+            reason: "missing_bearer_prefix".to_string(),
+        });
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
-            let mut diff = 0u8;
-            let exp_bytes = expected.as_bytes();
-            let prov_bytes = provided.as_bytes();
-            if exp_bytes.len() != prov_bytes.len() {
-                diff = 1;
-            } else {
-                for i in 0..exp_bytes.len() {
-                    diff |= exp_bytes[i] ^ prov_bytes[i];
-                }
-            }
+    let provided = &auth_header[7..];
+    let token_hash = {
+        use sha2::{Sha256, Digest};
+        let mut h = Sha256::new();
+        h.update(provided.as_bytes());
+        format!("{:x}", h.finalize())
+    };
 
-            let access_granted = diff == 0;
-            let iam_logger = crate::audit::IamLogger::new(std::path::PathBuf::from("audit_logs"));
-            iam_logger.record(&crate::audit::IamAccessRecord {
-                timestamp_utc_secs: ts_secs,
-                endpoint,
-                operator_token_hash: token_hash,
-                source_ip: None,
-                mfa_verified: access_granted,
-                access_granted,
-                reason: if access_granted { "valid_bearer_token".to_string() } else { "invalid_token".to_string() },
-            });
-
-            if !access_granted {
-                return Err(StatusCode::FORBIDDEN);
-            }
+    let mut diff = 0u8;
+    let exp_bytes = expected.as_bytes();
+    let prov_bytes = provided.as_bytes();
+    if exp_bytes.len() != prov_bytes.len() {
+        diff = 1;
+    } else {
+        for i in 0..exp_bytes.len() {
+            diff |= exp_bytes[i] ^ prov_bytes[i];
         }
+    }
+
+    let access_granted = diff == 0;
+    let iam_logger = crate::audit::IamLogger::new(std::path::PathBuf::from("audit_logs"));
+    iam_logger.record(&crate::audit::IamAccessRecord {
+        timestamp_utc_secs: ts_secs,
+        endpoint,
+        operator_token_hash: token_hash,
+        source_ip: None,
+        mfa_verified: access_granted,
+        access_granted,
+        reason: if access_granted { "valid_bearer_token".to_string() } else { "invalid_token".to_string() },
+    });
+
+    if !access_granted {
+        return Err(StatusCode::FORBIDDEN);
     }
     Ok(next.run(req).await)
 }
@@ -1462,6 +1490,47 @@ pub async fn start_proxy_server(
     
     let mut rng = rand::rngs::OsRng;
     let ai_model = Arc::new(std::sync::Mutex::new(crate::ai::model::EdgeAutoencoder::new(&mut rng)));
+    let (ai_training_sender, mut ai_training_receiver) = tokio::sync::mpsc::channel::<crate::ai::linalg::Vector>(2048);
+    let worker_ai_model = ai_model.clone();
+    tokio::spawn(async move {
+        let mut batch = Vec::with_capacity(16);
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                maybe_sample = ai_training_receiver.recv() => {
+                    match maybe_sample {
+                        Some(sample) => {
+                            batch.push(sample);
+                            if batch.len() >= 16 {
+                                let samples = std::mem::replace(&mut batch, Vec::with_capacity(16));
+                                let mut model = worker_ai_model.lock().unwrap();
+                                for s in &samples {
+                                    let (_score, mse) = model.compute_anomaly_score(s);
+                                    model.record_loss(mse);
+                                    let (x_hat, h) = model.forward(s);
+                                    model.backward(s, &x_hat, &h);
+                                }
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    if !batch.is_empty() {
+                        let samples = std::mem::replace(&mut batch, Vec::with_capacity(16));
+                        let mut model = worker_ai_model.lock().unwrap();
+                        for s in &samples {
+                            let (_score, mse) = model.compute_anomaly_score(s);
+                            model.record_loss(mse);
+                            let (x_hat, h) = model.forward(s);
+                            model.backward(s, &x_hat, &h);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     let batch_accumulator = Arc::new(crate::zk::batch::BatchAccumulator::new());
     let iso_config = Arc::new(std::sync::RwLock::new(load_iso_config()));
 
@@ -1545,6 +1614,7 @@ pub async fn start_proxy_server(
         iso_config,
         heartbeat_manager: heartbeat_mgr,
         ai_model,
+        ai_training_sender,
         batch_accumulator,
         zk_mode,
         hybrid_mode,

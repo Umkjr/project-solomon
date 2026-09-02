@@ -7,6 +7,9 @@ pub mod crypto;
 pub mod bcd;
 
 #[cfg(feature = "std")]
+pub mod ebcdic;
+
+#[cfg(feature = "std")]
 pub mod iso8583;
 
 #[cfg(feature = "std")]

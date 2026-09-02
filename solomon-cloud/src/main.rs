@@ -1,4 +1,3 @@
-// control_plane/src/main.rs
 use axum::{
     routing::{get, post},
     Router,
@@ -6,6 +5,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
+use tower_http::cors::{CorsLayer, Any};
+use tower_http::services::ServeDir;
 
 mod api;
 mod crypto;
@@ -29,6 +30,12 @@ async fn main() {
     // 3. Setup Shared App State
     let app_state = Arc::new(api::AppState { db_pool, signer });
 
+    // CORS configuration for local dashboard access
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     // 4. Assemble Axum Router with Trace Telemetry
     let app = Router::new()
         // Phase 4 base64 licensing schema route
@@ -43,11 +50,20 @@ async fn main() {
         // Phase 2 Federated AI Weight Aggregator route
         .route("/v1/ai/sync-weights", post(api::sync_ai_weights))
         .route("/v1/ai/model-latest", get(api::get_latest_model))
+        // Phase 7 Dashboard & Fleet Management routes
+        .route("/api/dashboard/fleet", get(api::dashboard_fleet_handler))
+        .route("/api/dashboard/toggle", post(api::dashboard_toggle_handler))
+        .route("/api/dashboard/sync", post(api::dashboard_sync_handler))
+        .route("/api/dashboard/register", post(api::dashboard_register_handler))
+        .route("/api/dashboard/telemetry", get(api::dashboard_telemetry_handler))
         // Observability and Health Probes
         .route("/metrics", get(api::metrics_handler))
         .route("/healthz", get(api::healthz_handler))
+        .with_state(app_state)
+        .nest_service("/dashboard", ServeDir::new("dashboard"))
+        .fallback_service(ServeDir::new("dashboard"))
         .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
+        .layer(cors);
 
     // 5. Bind Server to network interface
     let port = std::env::var("CONTROL_PLANE_PORT")
