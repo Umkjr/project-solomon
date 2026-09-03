@@ -170,7 +170,7 @@ pub struct ProxyState {
     pub last_request_interval_ms: std::sync::atomic::AtomicUsize,
     pub iso_config: Arc<std::sync::RwLock<IsoConfig>>,
     pub heartbeat_manager: Arc<HeartbeatManager>,
-    pub ai_model: Arc<std::sync::Mutex<crate::ai::model::EdgeAutoencoder>>,
+    pub ai_model: Arc<std::sync::RwLock<crate::ai::model::EdgeAutoencoder>>,
     pub ai_training_sender: tokio::sync::mpsc::Sender<crate::ai::linalg::Vector>,
     pub batch_accumulator: Arc<crate::zk::batch::BatchAccumulator>,
     pub zk_mode: String,
@@ -466,7 +466,7 @@ pub async fn proxy_handler(
     // 3.5 Privacy-Preserving AI Anomaly Scoring (Fast Non-blocking Forward Pass)
     let features = extract_features(&body_bytes, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
     let anomaly_score = {
-        let model = state.ai_model.lock().unwrap();
+        let model = state.ai_model.read().unwrap();
         let (score, _) = model.compute_anomaly_score(&features);
         score
     };
@@ -748,6 +748,29 @@ pub async fn handle_iso8583_tcp_connection(
                 // 3. Parse ISO 8583 Packet
                 let mut iso_msg = Iso8583Message::parse(&packet_buf)?;
 
+                // 3.5 Field 7 Timestamp Freshness Guard (PCI-DSS & ISO 8583 Replay Attack Prevention)
+                // For financial request messages (0100 / 0200), validate transmission timestamp against system UTC.
+                // Transactions older than 120 seconds are rejected immediately with ISO Response Code 94 (Duplicate transmission).
+                if iso_msg.mti[0] == b'0' && (iso_msg.mti[1] == b'1' || iso_msg.mti[1] == b'2') {
+                    if let Some(f7_str) = iso_msg.get_field_str(7) {
+                        let now_utc = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        if !crate::iso8583::is_field7_fresh(f7_str, now_utc, 120) {
+                            tracing::warn!("REPLAY DEFENSE: Stale or future Field 7 timestamp '{}' rejected with Code 94", f7_str);
+                            let mut resp_msg = Iso8583Message::new([iso_msg.mti[0], iso_msg.mti[1], b'1', b'0']);
+                            if let Some(stan) = iso_msg.get_field(11) {
+                                resp_msg.set_field(11, stan.to_vec());
+                            }
+                            resp_msg.set_field(39, b"94".to_vec()); // Duplicate / Stale Transmission
+                            let framed = resp_msg.serialize_tcp_framed()?;
+                            let _ = client_stream.write_all(&framed).await;
+                            continue;
+                        }
+                    }
+                }
+
                 // 4. Memory Pinning & Execution Barrier
                 speculative_barrier();
 
@@ -768,10 +791,10 @@ pub async fn handle_iso8583_tcp_connection(
                     (sig, pk)
                 };
 
-                // 5.5 Privacy-Preserving AI Anomaly Scoring (Fast Non-blocking Forward Pass)
+                // 5.5 Privacy-Preserving AI Anomaly Scoring (Lockless Parallel Read Forward Pass)
                 let features = extract_features(&raw_iso_bytes, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
                 let anomaly_score = {
-                    let model = state.ai_model.lock().unwrap();
+                    let model = state.ai_model.read().unwrap();
                     let (score, _) = model.compute_anomaly_score(&features);
                     score
                 };
@@ -1018,6 +1041,19 @@ pub fn process_receiving_iso8583_message(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let mut iso_msg = Iso8583Message::parse(packet_buf)?;
 
+    // PCI-DSS & ISO 8583 Replay Defense: Validate Field 7 if present on incoming financial message
+    if iso_msg.mti[0] == b'0' && (iso_msg.mti[1] == b'1' || iso_msg.mti[1] == b'2') {
+        if let Some(f7_str) = iso_msg.get_field_str(7) {
+            let now_utc = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if !crate::iso8583::is_field7_fresh(f7_str, now_utc, 120) {
+                return Err(format!("Field 7 timestamp '{}' is stale or replayed outside the 120s tolerance window", f7_str).into());
+            }
+        }
+    }
+
     // Identify PQC Field (112 or 123)
     let pqc_field_num = if iso_msg.has_field(112) {
         112u8
@@ -1224,7 +1260,7 @@ pub async fn run_heartbeat_loop(
 pub async fn run_ai_training_sync_loop(
     license_id: String,
     control_plane_url: String,
-    ai_model: Arc<std::sync::Mutex<crate::ai::model::EdgeAutoencoder>>,
+    ai_model: Arc<std::sync::RwLock<crate::ai::model::EdgeAutoencoder>>,
 ) {
     let client = Client::new();
     let mut epoch = 1u32;
@@ -1234,7 +1270,7 @@ pub async fn run_ai_training_sync_loop(
         tokio::time::sleep(Duration::from_secs(15)).await;
 
         let (dp_weights, avg_loss) = {
-            let mut model = ai_model.lock().unwrap();
+            let mut model = ai_model.write().unwrap();
             let mut rng = rand::rngs::OsRng;
             let weights = model.apply_dp_and_get_weights(&mut rng);
             let loss = model.get_avg_loss_and_reset();
@@ -1506,7 +1542,7 @@ pub async fn start_proxy_server(
     let heartbeat_mgr = Arc::new(HeartbeatManager::new(fingerprint, None));
     
     let mut rng = rand::rngs::OsRng;
-    let ai_model = Arc::new(std::sync::Mutex::new(crate::ai::model::EdgeAutoencoder::new(&mut rng)));
+    let ai_model = Arc::new(std::sync::RwLock::new(crate::ai::model::EdgeAutoencoder::new(&mut rng)));
     let (ai_training_sender, mut ai_training_receiver) = tokio::sync::mpsc::channel::<crate::ai::linalg::Vector>(2048);
     let worker_ai_model = ai_model.clone();
     tokio::spawn(async move {
@@ -1520,7 +1556,7 @@ pub async fn start_proxy_server(
                             batch.push(sample);
                             if batch.len() >= 16 {
                                 let samples = std::mem::replace(&mut batch, Vec::with_capacity(16));
-                                let mut model = worker_ai_model.lock().unwrap();
+                                let mut model = worker_ai_model.write().unwrap();
                                 for s in &samples {
                                     let (_score, mse) = model.compute_anomaly_score(s);
                                     model.record_loss(mse);
@@ -1535,7 +1571,7 @@ pub async fn start_proxy_server(
                 _ = interval.tick() => {
                     if !batch.is_empty() {
                         let samples = std::mem::replace(&mut batch, Vec::with_capacity(16));
-                        let mut model = worker_ai_model.lock().unwrap();
+                        let mut model = worker_ai_model.write().unwrap();
                         for s in &samples {
                             let (_score, mse) = model.compute_anomaly_score(s);
                             model.record_loss(mse);

@@ -1,8 +1,8 @@
 # Project Solomon: Independent Payment Certifier & Stress Audit Report
 
-**Date & Time**: 2026-09-03 14:26:42 UTC  
+**Date & Time**: 2026-09-03 15:45:35 UTC  
 **Audit Topology**: Decoupled Black-Box Testing (Razorpay Diurnal Payment Mix)  
-**Execution Runtime**: 4.33s  
+**Execution Runtime**: 19.38s  
 **Overall Certifier Verdict**: **CERTIFIED COMPLIANT (Tier-1 Bank Ready)**
 
 ---
@@ -11,7 +11,7 @@
 
 | Regulatory / Industry Framework | Mandatory Standard | Measured Result | Audit Status |
 | :--- | :--- | :--- | :--- |
-| **NPCI UPI 2.0 Gateway SLA** | P50 < 50ms (Target < 25ms), P99 < 100ms | **P50: 19.050 ms • P99: 28.692 ms** | **PASSED (< 25ms internal target & NPCI < 50ms SLA)** |
+| **NPCI UPI 2.0 Gateway SLA** | P50 < 50ms (Target < 25ms), P99 < 100ms | **P50: 11.769 ms • P99: 30.178 ms** | **PASSED (< 25ms internal target & NPCI < 50ms SLA)** |
 | **FIPS 204 Non-Repudiation** | 100% Cryptographic Verification | **100.00% Verified** | **PASSED** |
 | **Adversarial Tamper Defense** | False Acceptance Rate = 0.000% | **FAR: 0.000% (10/10 Rejections)** | **PASSED** |
 | **Protocol Boundary Fuzzing** | Zero-Panic Clamp on Malformed Frames | **100% Handled Safely** | **PASSED** |
@@ -34,12 +34,12 @@ Simulated across 6 diurnal traffic phases (Night Lull, Morning Commute, Lunch Ru
 ## 3. Wire Latency Distribution (Multi-Proxy Pipeline)
 
 ```
-Latency Min: 6.275 ms
-Latency Avg: 19.332 ms
-Latency P50: 19.050 ms
-Latency P90: 25.390 ms
-Latency P99: 28.692 ms
-Latency Max: 29.213 ms
+Latency Min: 4.536 ms
+Latency Avg: 14.052 ms
+Latency P50: 11.769 ms
+Latency P90: 25.837 ms
+Latency P99: 30.178 ms
+Latency Max: 30.245 ms
 ```
 
 ---

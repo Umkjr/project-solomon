@@ -781,3 +781,71 @@ impl Iso8583Message {
         out
     }
 }
+
+/// Gregorian date conversion helper: days since 1970-01-01 -> (year, month, day)
+pub fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z % 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+/// Gregorian date conversion helper: (year, month, day) -> days since 1970-01-01
+pub fn ymd_to_days(year: u64, month: u64, day: u64) -> u64 {
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let era = y / 400;
+    let yoe = y % 400;
+    let doy = (153 * m + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+/// Validates Field 7 (Transmission Date & Time: MMDDhhmmss) against current system UTC time.
+/// Returns true if within the allowed clock-skew tolerance (default 120s).
+/// Rejects stale, manipulated, or future-drifted transactions.
+pub fn is_field7_fresh(f7_str: &str, current_utc_secs: u64, tolerance_secs: i64) -> bool {
+    if f7_str.len() != 10 {
+        return false;
+    }
+    let bytes = f7_str.as_bytes();
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return false;
+        }
+    }
+
+    let month: u64 = match f7_str[0..2].parse() { Ok(v) if (1..=12).contains(&v) => v, _ => return false };
+    let day: u64 = match f7_str[2..4].parse() { Ok(v) if (1..=31).contains(&v) => v, _ => return false };
+    let hh: u64 = match f7_str[4..6].parse() { Ok(v) if v < 24 => v, _ => return false };
+    let mm: u64 = match f7_str[6..8].parse() { Ok(v) if v < 60 => v, _ => return false };
+    let ss: u64 = match f7_str[8..10].parse() { Ok(v) if v < 60 => v, _ => return false };
+
+    let current_days = current_utc_secs / 86400;
+    let (curr_year, curr_month, _curr_day) = days_to_ymd(current_days);
+
+    // Resolve Year Boundary (December -> January rollover)
+    let year = if month == 12 && curr_month == 1 {
+        curr_year.saturating_sub(1)
+    } else if month == 1 && curr_month == 12 {
+        curr_year + 1
+    } else {
+        curr_year
+    };
+
+    let tx_days = ymd_to_days(year, month, day);
+    let tx_secs = tx_days * 86400 + hh * 3600 + mm * 60 + ss;
+
+    let diff = (current_utc_secs as i64) - (tx_secs as i64);
+    diff.abs() <= tolerance_secs
+}

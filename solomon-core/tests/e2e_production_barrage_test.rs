@@ -98,7 +98,7 @@ fn make_test_state(mode: ProxyMode, backend_addr: SocketAddr) -> Arc<ProxyState>
         last_request_interval_ms: std::sync::atomic::AtomicUsize::new(0),
         iso_config: Arc::new(std::sync::RwLock::new(IsoConfig { sponsor_banks })),
         heartbeat_manager: heartbeat_mgr,
-        ai_model: Arc::new(std::sync::Mutex::new(solomon_core::ai::model::EdgeAutoencoder::new(&mut rand::rngs::OsRng))),
+        ai_model: Arc::new(std::sync::RwLock::new(solomon_core::ai::model::EdgeAutoencoder::new(&mut rand::rngs::OsRng))),
         ai_training_sender: tokio::sync::mpsc::channel(10).0,
         batch_accumulator: Arc::new(solomon_core::zk::batch::BatchAccumulator::new()),
         zk_mode: "production".to_string(),

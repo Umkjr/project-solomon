@@ -6,8 +6,9 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
 pub struct AuditLogger {
@@ -17,6 +18,9 @@ pub struct AuditLogger {
     hasher: Arc<dyn AuditHasher>,
     node_identity_hex: String,
     pub worker_healthy: Arc<AtomicBool>,
+    pub spillover_queue: Arc<std::sync::Mutex<VecDeque<String>>>,
+    pub dropped_due_to_overflow: Arc<AtomicU64>,
+    pub recovered_from_spillover: Arc<AtomicU64>,
 }
 
 enum AuditLogCommand {
@@ -50,6 +54,14 @@ impl AuditLogger {
         let worker_healthy = Arc::new(AtomicBool::new(true));
         let worker_healthy_flag = Arc::clone(&worker_healthy);
 
+        const MAX_SPILLOVER_CAPACITY: usize = 5_000;
+        let spillover_queue = Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(MAX_SPILLOVER_CAPACITY)));
+        let worker_spillover = Arc::clone(&spillover_queue);
+        let dropped_due_to_overflow = Arc::new(AtomicU64::new(0));
+        let worker_dropped = Arc::clone(&dropped_due_to_overflow);
+        let recovered_from_spillover = Arc::new(AtomicU64::new(0));
+        let worker_recovered = Arc::clone(&recovered_from_spillover);
+
         // Spawn background asynchronous worker task
         tokio::spawn(async move {
             Self::background_worker(
@@ -60,6 +72,9 @@ impl AuditLogger {
                 worker_hasher,
                 worker_node_identity,
                 worker_healthy_flag,
+                worker_spillover,
+                worker_dropped,
+                worker_recovered,
             ).await;
         });
 
@@ -70,6 +85,9 @@ impl AuditLogger {
             hasher,
             node_identity_hex,
             worker_healthy,
+            spillover_queue,
+            dropped_due_to_overflow,
+            recovered_from_spillover,
         }
     }
 
@@ -120,6 +138,19 @@ impl AuditLogger {
 
     pub fn is_healthy(&self) -> bool {
         self.worker_healthy.load(Ordering::Relaxed)
+    }
+
+    pub fn spillover_queue_len(&self) -> usize {
+        let q = self.spillover_queue.lock().unwrap();
+        q.len()
+    }
+
+    pub fn dropped_records_count(&self) -> u64 {
+        self.dropped_due_to_overflow.load(Ordering::Relaxed)
+    }
+
+    pub fn recovered_records_count(&self) -> u64 {
+        self.recovered_from_spillover.load(Ordering::Relaxed)
     }
 
     /// Gregorian date helper (days since UNIX epoch -> (year, month, day))
@@ -209,6 +240,9 @@ impl AuditLogger {
         hasher: Arc<dyn AuditHasher>,
         node_identity_hex: String,
         worker_healthy: Arc<AtomicBool>,
+        worker_spillover: Arc<std::sync::Mutex<VecDeque<String>>>,
+        worker_dropped: Arc<AtomicU64>,
+        worker_recovered: Arc<AtomicU64>,
     ) {
         if let Err(e) = create_dir_all(&log_dir) {
             tracing::error!("CRITICAL: Failed to create audit log directory {:?}: {:?}", log_dir, e);
@@ -362,11 +396,46 @@ impl AuditLogger {
                         *lock = current_hash;
                     }
 
+                    // If file was previously unavailable, attempt opportunistic reconnect
+                    if file_opt.is_none() {
+                        file_opt = Self::try_open_file(&log_path, 1);
+                        if file_opt.is_some() {
+                            worker_healthy.store(true, Ordering::SeqCst);
+                            tracing::info!("AUDIT RECOVERY: Successfully recovered audit log file handle {:?}", log_path);
+                        }
+                    }
+
                     // Serialize to NDJSON and write to disk if file available
-                    if let Some(ref mut file) = file_opt {
-                        if let Ok(serialized) = serde_json::to_string(&record) {
-                            let _ = writeln!(file, "{}", serialized);
-                            let _ = file.flush();
+                    if let Ok(serialized) = serde_json::to_string(&record) {
+                        let mut written = false;
+                        if let Some(ref mut file) = file_opt {
+                            // 1. Drain previously spilled records from RAM queue
+                            let pending = {
+                                let mut q = worker_spillover.lock().unwrap();
+                                let items: Vec<String> = q.drain(..).collect();
+                                items
+                            };
+                            for pending_line in pending {
+                                if writeln!(file, "{}", pending_line).is_ok() {
+                                    worker_recovered.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+
+                            // 2. Write current record
+                            if writeln!(file, "{}", serialized).is_ok() && file.flush().is_ok() {
+                                written = true;
+                            }
+                        }
+
+                        if !written {
+                            let mut q = worker_spillover.lock().unwrap();
+                            if q.len() < 5_000 {
+                                q.push_back(serialized);
+                                tracing::warn!("AUDIT SPILLOVER: Record staged in RAM ring-buffer (queue depth: {}) due to disk outage", q.len());
+                            } else {
+                                worker_dropped.fetch_add(1, Ordering::Relaxed);
+                                tracing::error!("CRITICAL AUDIT OVERFLOW: RAM spillover queue at max capacity (5000) — record dropped!");
+                            }
                         }
                     }
 
@@ -374,6 +443,16 @@ impl AuditLogger {
                 }
                 AuditLogCommand::Flush(respond_to) => {
                     if let Some(ref mut file) = file_opt {
+                        let pending = {
+                            let mut q = worker_spillover.lock().unwrap();
+                            let items: Vec<String> = q.drain(..).collect();
+                            items
+                        };
+                        for pending_line in pending {
+                            if writeln!(file, "{}", pending_line).is_ok() {
+                                worker_recovered.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
                         let _ = file.flush();
                     }
                     let _ = respond_to.send(());

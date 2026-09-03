@@ -89,7 +89,7 @@ impl RazorpayTrafficGenerator {
         rng: &mut impl Rng,
         rail: RazorpayPaymentRail,
         stan: u32,
-        phase: DiurnalPhase,
+        _phase: DiurnalPhase,
     ) -> Iso8583Message {
         let mti = match rail {
             RazorpayPaymentRail::RefundsReversals => {
@@ -122,10 +122,14 @@ impl RazorpayTrafficGenerator {
         msg.set_field(4, format!("{:012}", amount_paise).into_bytes());
 
         // Field 7: Transmission Date & Time (10 chars MMDDhhmmss)
-        let hour = phase.simulated_hour();
-        let minute: u32 = rng.gen_range(0..60);
-        let second: u32 = rng.gen_range(0..60);
-        let f7 = format!("0903{:02}{:02}{:02}", hour, minute, second);
+        let now_utc = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let days = now_utc / 86400;
+        let (_y, m, d) = crate::iso8583::days_to_ymd(days);
+        let s_day = now_utc % 86400;
+        let hh = s_day / 3600;
+        let mm = (s_day % 3600) / 60;
+        let ss = s_day % 60;
+        let f7 = format!("{:02}{:02}{:02}{:02}{:02}", m, d, hh, mm, ss);
         msg.set_field(7, f7.into_bytes());
 
         // Field 11: Systems Trace Audit Number / STAN (6 chars zero-padded)
@@ -133,8 +137,8 @@ impl RazorpayTrafficGenerator {
         msg.set_field(11, f11.into_bytes());
 
         // Field 12 & 13: Local Time & Date
-        msg.set_field(12, format!("{:02}{:02}{:02}", hour, minute, second).into_bytes());
-        msg.set_field(13, b"0903".to_vec());
+        msg.set_field(12, format!("{:02}{:02}{:02}", hh, mm, ss).into_bytes());
+        msg.set_field(13, format!("{:02}{:02}", m, d).into_bytes());
 
         // Rail-specific fields
         match rail {
