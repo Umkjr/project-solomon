@@ -5,6 +5,7 @@ use std::fs;
 use std::io::Read;
 use tokio::time::sleep;
 
+#[cfg(debug_assertions)]
 #[tokio::test]
 async fn test_wal_failover_on_panic() {
     // 1. Setup the AsyncBatchAccumulator

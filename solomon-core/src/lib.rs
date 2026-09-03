@@ -35,6 +35,8 @@ pub mod ai;
 pub mod config;
 #[cfg(feature = "proxy")]
 pub mod hsm;
+#[cfg(feature = "proxy")]
+pub mod testing;
 
 // Clean Top-Level Public Cryptographic API
 pub use crypto::nist_api::{keygen, sign, sign_hedged, verify};

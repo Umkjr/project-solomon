@@ -825,6 +825,23 @@ pub async fn handle_iso8583_tcp_connection(
                 proof_payload.extend_from_slice(&signature); // 3309-byte ML-DSA-65 signature
                 iso_msg.inject_pqc_field(pqc_field_num, &proof_payload);
 
+                // 7.5 Record to RBI Audit Chain if configured
+                if let Some(logger) = &state.audit_logger {
+                    let stan_str = iso_msg.get_field_str(11).unwrap_or("000000").to_string();
+                    let _ = logger.emit(
+                        format!("ISO-TX-{}", stan_str),
+                        "tcs_bancs_switch".to_string(),
+                        crate::audit::record::CryptoAuditMeta {
+                            algorithm_suite: "FIPS-204-ML-DSA-65".to_string(),
+                            hybrid_verified: true,
+                            starks_proven: false,
+                            proof_latency_ms: 0.0,
+                        },
+                        "ap-south-1".to_string(),
+                        crate::audit::record::SystemAction::SuccessForwarded,
+                    ).await;
+                }
+
                 // 8. Connect to Backend Banking Switch & Forward
                 let mut backend_stream = TcpStream::connect(backend_addr).await?;
                 let outbound_framed = iso_msg.serialize_tcp_framed()?;

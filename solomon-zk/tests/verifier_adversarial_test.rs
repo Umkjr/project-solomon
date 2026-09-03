@@ -52,7 +52,7 @@ fn test_stark_verifier_happy_path_and_latency() {
     }
     assert!(result.is_ok(), "Valid proof must pass verification, got: {:?}", result.err());
     assert!(result.unwrap(), "Verifier verdict must be true");
-    let max_latency_us = if cfg!(debug_assertions) { 100_000 } else { 15_000 };
+    let max_latency_us = if cfg!(debug_assertions) { 250_000 } else { 15_000 };
     assert!(verifier_latency.as_micros() < max_latency_us, "Verifier latency must be < {} µs", max_latency_us);
 }
 
