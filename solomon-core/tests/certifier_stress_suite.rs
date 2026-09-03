@@ -271,8 +271,8 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     println!("  • Latency P90:             {:.3} ms", p90);
     println!("  • Latency P99:             {:.3} ms", p99);
     println!("  • Latency Max:             {:.3} ms", max);
-    let npci_gateway_sla_met = p50 < 50.0 && p99 < 100.0;
-    let aggressive_target_met = p50 < 25.0;
+    let npci_gateway_sla_met: bool = (p50 < 50.0) && (p99 < 100.0);
+    let aggressive_target_met: bool = p50 < 25.0;
     let sla_verdict = if aggressive_target_met {
         "PASSED (Compliant with < 25ms internal target & NPCI < 50ms standard)"
     } else if npci_gateway_sla_met {
@@ -280,7 +280,7 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     } else {
         "FAILED (Breached NPCI Gateway SLA threshold)"
     };
-    println!("  • NPCI UPI SLA Status:     {}\n", sla_verdict);
+    println!("  • NPCI UPI SLA Status:     {} [Boolean: {}]\n", sla_verdict, npci_gateway_sla_met);
 
     assert!(p50 < 50.0, "P50 latency must be under 50ms on local multi-proxy wire");
 
@@ -335,12 +335,18 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     }
 
     let far = ((num_tamper_probes - tamper_rejected) as f64 / num_tamper_probes as f64) * 100.0;
+    let tamper_bool: bool = (tamper_rejected == num_tamper_probes) && (far == 0.0);
+    let tamper_verdict = if tamper_bool {
+        "PASSED (100% Cryptographic Tamper Rejection)"
+    } else {
+        "FAILED (Security Vulnerability: Tampered frames accepted!)"
+    };
     println!("  • Injected Tamper Probes:  {}", num_tamper_probes);
     println!("  • Rejections (Code 96):    {}/{}", tamper_rejected, num_tamper_probes);
     println!("  • False Acceptance Rate:   {:.3}% (Target: 0.000%)", far);
-    println!("  • FIPS 204 Integrity:      PASSED (100% Cryptographic Tamper Rejection)\n");
+    println!("  • FIPS 204 Integrity:      {} [Boolean: {}]\n", tamper_verdict, tamper_bool);
 
-    assert_eq!(tamper_rejected, num_tamper_probes, "All tampered mutations must be rejected");
+    assert!(tamper_bool, "All tampered mutations must be rejected (FAR == 0.0)");
 
     // =========================================================================
     // AUDIT 3: BUFFER OVERFLOW & MALFORMED PROTOCOL PROBE
@@ -370,8 +376,14 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     let mut rbuf = vec![0u8; rlen];
     recovery_stream.read_exact(&mut rbuf).await.unwrap();
     let resp = Iso8583Message::parse(&rbuf).unwrap();
-    assert_eq!(resp.get_field_str(39).unwrap(), "00", "Proxy must recover instantly after malformed probe");
-    println!("  • Fuzzing Status:          PASSED (Zero-panic boundary clamping verified)\n");
+    let fuzzing_bool: bool = resp.get_field_str(39) == Some("00");
+    let fuzzing_verdict = if fuzzing_bool {
+        "PASSED (Zero-panic boundary clamping verified)"
+    } else {
+        "FAILED (Gateway panicked or failed to recover)"
+    };
+    println!("  • Fuzzing Status:          {} [Boolean: {}]\n", fuzzing_verdict, fuzzing_bool);
+    assert!(fuzzing_bool, "Gateway must recover instantly after malformed probe");
 
     // =========================================================================
     // AUDIT 4: RBI CONTINUOUS AUDIT LEDGER CONTINUITY VERIFICATION
@@ -398,8 +410,14 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     assert!(!found_records.is_empty(), "Audit ledger must contain recorded transactions on disk");
     let verify_result = AuditChain::verify_chain(&found_records, &Sha256AuditHasher);
     println!("  • Audit Chain Continuity:  {:?}", verify_result);
-    assert!(verify_result.is_ok(), "Audit hash chain must verify with 0 broken links");
-    println!("  • RBI Compliance:          PASSED (Unbroken cryptographic hash chain)\n");
+    let rbi_bool: bool = (!found_records.is_empty()) && verify_result.is_ok();
+    let rbi_verdict = if rbi_bool {
+        "PASSED (Unbroken cryptographic hash chain)"
+    } else {
+        "FAILED (Broken links or missing records in hash chain)"
+    };
+    println!("  • RBI Compliance:          {} [Boolean: {}]\n", rbi_verdict, rbi_bool);
+    assert!(rbi_bool, "Audit hash chain must verify with 0 broken links");
 
     println!("=========================================================================");
     println!("     CERTIFIER SUMMARY: ALL SYSTEM LIMITS & CAPABILITIES VALIDATED        ");
