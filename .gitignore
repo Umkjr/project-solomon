@@ -34,3 +34,8 @@ audit_logs/
 
 # Generated pilot reports
 pilot/reports/
+
+# Private startup & funding documents
+FUNDING_ROADMAP.md
+*roadmap*.md
+*grant*.md
