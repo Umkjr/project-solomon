@@ -271,7 +271,16 @@ async fn test_decoupled_certifier_full_pipeline_audit() {
     println!("  • Latency P90:             {:.3} ms", p90);
     println!("  • Latency P99:             {:.3} ms", p99);
     println!("  • Latency Max:             {:.3} ms", max);
-    println!("  • NPCI UPI SLA Status:     PASSED (P50 < 25ms, P99 < 100ms on wire)\n");
+    let npci_gateway_sla_met = p50 < 50.0 && p99 < 100.0;
+    let aggressive_target_met = p50 < 25.0;
+    let sla_verdict = if aggressive_target_met {
+        "PASSED (Compliant with < 25ms internal target & NPCI < 50ms standard)"
+    } else if npci_gateway_sla_met {
+        "PASSED (Meets NPCI Gateway SLA < 50ms; marginally exceeds < 25ms internal target)"
+    } else {
+        "FAILED (Breached NPCI Gateway SLA threshold)"
+    };
+    println!("  • NPCI UPI SLA Status:     {}\n", sla_verdict);
 
     assert!(p50 < 50.0, "P50 latency must be under 50ms on local multi-proxy wire");
 
