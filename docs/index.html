@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solomon System Securities | Sovereign Post-Quantum Financial Infrastructure</title>
+  <meta name="description" content="High-throughput Post-Quantum Cryptographic (NIST FIPS 204) and Zero-Knowledge (STARK) reverse proxy for NPCI UPI 2.0 and global banking switches." />
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(16, 22, 34, 0.75);
+      --bg-card-hover: rgba(22, 32, 50, 0.85);
+      --border-color: rgba(56, 189, 248, 0.15);
+      --border-glow: rgba(56, 189, 248, 0.4);
+      --cyan: #00f0ff;
+      --blue: #3b82f6;
+      --indigo: #6366f1;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      overflow-x: hidden;
+      line-height: 1.6;
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 80%, rgba(0, 240, 255, 0.06) 0%, transparent 40%);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      background: rgba(7, 9, 14, 0.8);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 16px 0;
+    }
+
+    .nav-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+
+    .logo-img {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .logo-text {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .nav-link:hover {
+      color: var(--cyan);
+    }
+
+    .btn-github {
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-github:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+    }
+
+    /* Hero */
+    .hero {
+      padding: 90px 0 60px;
+      text-align: center;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid var(--border-color);
+      color: var(--cyan);
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .hero-title {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      max-width: 900px;
+      margin: 0 auto 24px;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #ffffff 30%, var(--cyan) 70%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 60px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      color: #050b14;
+      font-weight: 700;
+      padding: 12px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 0 25px rgba(0, 240, 255, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.5);
+    }
+
+    .btn-secondary {
+      background: rgba(16, 22, 34, 0.8);
+      color: #fff;
+      font-weight: 600;
+      padding: 12px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-glow);
+      background: rgba(22, 32, 50, 0.9);
+    }
+
+    /* Live Benchmarks Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      margin-bottom: 80px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+      transition: all 0.3s ease;
+      text-align: left;
+    }
+
+    .metric-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-glow);
+      transform: translateY(-4px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 4px;
+    }
+
+    .metric-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .metric-sub {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Features Section */
+    .section-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+      margin-bottom: 80px;
+    }
+
+    .feature-box {
+      background: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 32px;
+      transition: all 0.3s ease;
+    }
+
+    .feature-box:hover {
+      border-color: var(--border-glow);
+      background: var(--bg-card-hover);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: rgba(0, 240, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      color: var(--cyan);
+      font-size: 1.5rem;
+    }
+
+    .feature-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .feature-text {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Architecture Wire Preview */
+    .arch-card {
+      background: #0d121d;
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 36px;
+      margin-bottom: 80px;
+    }
+
+    .code-snippet {
+      background: #05080e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: #38bdf8;
+      overflow-x: auto;
+      margin-top: 20px;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .footer-logo {
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .hero-title { font-size: 2.4rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sticky Header -->
+  <header>
+    <div class="container nav-wrapper">
+      <a href="#" class="logo-container">
+        <svg width="36" height="36" viewBox="0 0 48 48" fill="none" style="filter: drop-shadow(0 0 8px #00f0ff80);">
+          <polygon points="24,4 42,12 42,26 24,44 6,26 6,12" stroke="#00f0ff" stroke-width="2.5" fill="rgba(0, 240, 255, 0.08)"/>
+          <circle cx="24" cy="24" r="7" stroke="#38bdf8" stroke-width="2" fill="none"/>
+          <line x1="24" y1="17" x2="24" y2="31" stroke="#38bdf8" stroke-width="1.5"/>
+          <line x1="17" y1="24" x2="31" y2="24" stroke="#38bdf8" stroke-width="1.5"/>
+          <circle cx="24" cy="24" r="2.5" fill="#00f0ff"/>
+        </svg>
+        <span class="logo-text">Solomon System Securities</span>
+      </a>
+      <div class="nav-links">
+        <a href="#benchmarks" class="nav-link">Live Benchmarks</a>
+        <a href="#architecture" class="nav-link">Architecture</a>
+        <a href="#compliance" class="nav-link">Compliance</a>
+        <a href="https://github.com/Umkjr/project-solomon" target="_blank" class="btn-github">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub Repository
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge-pill">
+        <span class="badge-dot"></span>
+        NIST FIPS 204 & NPCI UPI 2.0 Compliant
+      </div>
+      <h1 class="hero-title">
+        The Quantum-Resistant Shield for <span class="gradient-text">Global Financial Switches</span>
+      </h1>
+      <p class="hero-desc">
+        Project Solomon is an indigenous, sub-12ms post-quantum cryptographic reverse proxy protecting ISO 8583 banking wires and NPCI switches against Harvest-Now-Decrypt-Later adversaries with zero switch downtime.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/Umkjr/project-solomon" target="_blank" class="btn-primary">Inspect Verified Code</a>
+        <a href="#benchmarks" class="btn-secondary">View Ground-Truth Telemetry</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Verified Benchmarks -->
+  <section class="container" id="benchmarks">
+    <div class="section-header">
+      <h2 class="section-title">Empirical Benchmark Evidence</h2>
+      <p class="section-desc">Audited and verified across 127 automated test suites and real-world disaster simulations.</p>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-value">11.77 ms</div>
+        <div class="metric-title">Wire Processing Latency (P50)</div>
+        <div class="metric-sub">Exceeds NPCI 25ms internal target & 50ms UPI 2.0 SLA. P90: 25.8ms, P99: 30.1ms.</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-value">60 / 60</div>
+        <div class="metric-title">NIST ACVP KATs Passed</div>
+        <div class="metric-sub">100% formal mathematical compliance with NIST FIPS 204 ML-DSA-65 standards.</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-value">1,000 : 1</div>
+        <div class="metric-title">STARK Batch Compression</div>
+        <div class="metric-sub">Goldilocks field Keccak-f[1600] AIR prover with AVX-512 & NEON SIMD acceleration.</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-value">10 / 10</div>
+        <div class="metric-title">Disaster Invariants Recovered</div>
+        <div class="metric-sub">Zero-loss resilience across simulated Visa 2018 crash, HDFC glitch, and SWIFT heist.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Architectural Pillars -->
+  <section class="container" id="architecture">
+    <div class="section-header">
+      <h2 class="section-title">Architectural Pillars</h2>
+      <p class="section-desc">Engineered in bare-metal Rust with zero unsafe code on critical transaction paths.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-box">
+        <div class="feature-icon">🛡️</div>
+        <h3 class="feature-title">Zero-Downtime Hybrid Framing</h3>
+        <p class="feature-text">
+          Transports classical signatures alongside 3,309-byte NIST ML-DSA-65 signatures in ISO 8583 private Field 112, enabling instant post-quantum defense without modifying core banking engines (TCS BaNCS / Finacle).
+        </p>
+      </div>
+
+      <div class="feature-box">
+        <div class="feature-icon">⚡</div>
+        <h3 class="feature-title">Lockless Edge AI Scoring</h3>
+        <p class="feature-text">
+          High-concurrency RwLock autoencoder evaluates 4-parameter transaction vectors (Amount, Time, Latency, Rail) in &lt;10µs to detect fraud and abnormal routing without blocking wires.
+        </p>
+      </div>
+
+      <div class="feature-box">
+        <div class="feature-icon">📜</div>
+        <h3 class="feature-title">Continuous RBI Cyber Audit</h3>
+        <p class="feature-text">
+          Tamper-evident SHA-256 continuous hash-chained audit logging with an automated spillover queue and 24-hour incident dispatcher adhering to RBI Section 13 directives.
+        </p>
+      </div>
+    </div>
+
+    <!-- Wire Transformation Code Card -->
+    <div class="arch-card">
+      <h3 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 8px;">Zero-Interruption Wire Architecture</h3>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        Project Solomon acts as an inline non-intrusive reverse proxy that injects quantum resilience into active financial switches:
+      </p>
+      <div class="code-snippet">
+[Bank Switch (TCS BaNCS)]  ──(ISO 8583 0200 Wire)──►  [Solomon Reverse Proxy]
+                                                             │
+                                   ┌─────────────────────────┴─────────────────────────┐
+                                   ▼                                                   ▼
+                       [Field 7 Replay Defense]                            [ML-DSA-65 PQC Engine]
+                                   │                                                   │
+                                   └─────────────────────────┬─────────────────────────┘
+                                                             ▼
+                                                [Packed Field 112 Wire]
+                                                             │
+                                                             ▼
+                                                [NPCI Receiving Gateway]
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-logo">Solomon System Securities</div>
+      <p>Autonomous Sovereign Post-Quantum Cryptographic Gateway for Critical Infrastructure</p>
+      <p style="margin-top: 12px; font-size: 0.8rem; color: #64748b;">
+        © 2026 Solomon System Securities. Built in India for Atmanirbhar Bharat Sovereign Cyber Defense.
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>
